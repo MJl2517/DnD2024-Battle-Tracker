@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+out/
+release/
+dist/
+.vite/
+.cache/
+coverage/
+
+# Local data and databases
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets and local-only assets
+secret/
+.env
+.env.*
+!.env.example
+
+# Logs and diagnostics
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local editor/system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.agents/
+.codex/
+
+# Local launch shortcuts generated for this workstation
+*.lnk
+DnD Battle Tracker.cmd
+DnD Battle Tracker DEV.cmd
+DnD Battle Tracker.vbs

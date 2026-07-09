@@ -1,0 +1,42 @@
+import '@testing-library/jest-dom/vitest';
+import { vi } from 'vitest';
+
+Object.defineProperty(window, 'dndTracker', {
+  configurable: true,
+  value: {
+    listCampaigns: vi.fn(),
+    createCampaign: vi.fn(),
+    deleteCampaign: vi.fn(),
+    getCampaignDetail: vi.fn(),
+    savePlayer: vi.fn(),
+    deletePlayer: vi.fn(),
+    importRuleholderCreature: vi.fn(),
+    fetchRuleholderSpell: vi.fn(),
+    saveCreature: vi.fn(),
+    deleteCreature: vi.fn(),
+    saveEncounter: vi.fn(),
+    deleteEncounter: vi.fn(),
+    saveEncounterGroup: vi.fn(),
+    deleteEncounterGroup: vi.fn(),
+    saveEncounterPlayerSetting: vi.fn(),
+    saveEncounterLair: vi.fn(),
+    deleteEncounterLair: vi.fn(),
+    startCombat: vi.fn(),
+    getCombatSession: vi.fn(),
+    updateCombatant: vi.fn(),
+    reorderCombatants: vi.fn(),
+    setActiveCombatant: vi.fn(),
+    advanceTurn: vi.fn(),
+    retreatTurn: vi.fn(),
+    endRound: vi.fn(),
+    advanceRound: vi.fn(),
+    retreatRound: vi.fn(),
+    completeCombat: vi.fn(),
+    dismissCombatXpAward: vi.fn(),
+    showPublicFeatureCard: vi.fn(),
+    dismissPublicFeatureCard: vi.fn(),
+    openPlayerWindow: vi.fn(),
+    getPlayerView: vi.fn(),
+    onPlayerView: vi.fn(() => () => undefined)
+  }
+});
