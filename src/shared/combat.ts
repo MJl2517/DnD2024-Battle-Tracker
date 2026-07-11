@@ -84,21 +84,27 @@ export function toPublicCombatants(combatants: Combatant[], activeCombatantId: s
         id: combatant.id,
         name: combatant.name,
         side: combatant.side,
+        isAlly: combatant.isAlly,
         armorClass: combatant.armorClass,
         initiative: combatant.initiative,
         turnOrder: combatant.turnOrder,
         effects: getVisibleEffects(combatant.effects),
+        publicNameVisible: combatant.publicNameVisible,
         bloodied: isBloodied(combatant.currentHp, combatant.maxHp),
         defeated: combatant.defeated || combatant.currentHp <= 0,
         escaped: combatant.escaped,
         visible: combatant.visible,
-        isCurrent: combatant.id === activeCombatantId
+        isCurrent: combatant.id === activeCombatantId,
+        hpSignal: combatant.currentHp + combatant.temporaryHp
       };
 
       if (combatant.side === 'player') {
         base.currentHp = combatant.currentHp;
         base.maxHp = combatant.maxHp;
         base.temporaryHp = combatant.temporaryHp;
+        if (combatant.snapshot && 'imageUrl' in combatant.snapshot) {
+          base.tokenUrl = combatant.snapshot.imageUrl;
+        }
       }
 
       if (snapshot) {
@@ -113,14 +119,16 @@ export function toPublicCombatants(combatants: Combatant[], activeCombatantId: s
 }
 
 export function calculateExperience(
-  combatants: Pick<Combatant, 'side' | 'currentHp' | 'defeated' | 'escaped' | 'snapshot'>[],
+  combatants: Array<Pick<Combatant, 'id' | 'side' | 'isAlly' | 'currentHp' | 'defeated' | 'escaped' | 'snapshot'>>,
   participatingPlayers: Pick<PlayerCharacter, 'active'>[],
   options: CompleteCombatOptions = { defeatedGiveXp: true, escapedXpMode: 'none' }
 ): CombatXpAward {
-  const defeatedNpcs = combatants.filter((combatant) => combatant.side === 'npc' && !combatant.escaped && (combatant.defeated || combatant.currentHp <= 0));
-  const escapedNpcs = combatants.filter((combatant) => combatant.side === 'npc' && combatant.escaped);
+  const defeatedNpcs = combatants.filter(
+    (combatant) => combatant.side === 'npc' && !combatant.isAlly && !combatant.escaped && (combatant.defeated || combatant.currentHp <= 0)
+  );
+  const escapedNpcs = combatants.filter((combatant) => combatant.side === 'npc' && !combatant.isAlly && combatant.escaped);
   const customPool = typeof options.customXpPool === 'number';
-  const totalXp = customPool
+  const baseTotalXp = customPool
     ? Math.max(0, Math.round(options.customXpPool ?? 0))
     : [...(options.defeatedGiveXp ? defeatedNpcs : []), ...escapedNpcs].reduce((sum, combatant) => {
         const xp = combatant.snapshot && 'xp' in combatant.snapshot ? combatant.snapshot.xp : 0;
@@ -128,15 +136,23 @@ export function calculateExperience(
         if (combatant.escaped && options.escapedXpMode === 'half') return sum + Math.floor(xp / 2);
         return sum + xp;
       }, 0);
+  const xpAdjustment = Math.round(options.xpAdjustment ?? 0);
+  const totalXp = Math.max(0, baseTotalXp + xpAdjustment);
   const activePlayerCount = participatingPlayers.filter((player) => player.active).length;
+  const selectedAllyIds = new Set(options.shareXpWithAllies ? options.xpAllyIds ?? [] : []);
+  const allyRecipientCount = combatants.filter((combatant) => combatant.side === 'npc' && combatant.isAlly && selectedAllyIds.has(combatant.id)).length;
+  const recipientCount = activePlayerCount + allyRecipientCount;
 
   return {
     totalXp,
-    xpPerPlayer: activePlayerCount > 0 ? Math.floor(totalXp / activePlayerCount) : 0,
+    xpPerPlayer: recipientCount > 0 ? Math.floor(totalXp / recipientCount) : 0,
     playerCount: activePlayerCount,
+    allyRecipientCount,
+    recipientCount,
     defeatedNpcCount: defeatedNpcs.length,
     escapedNpcCount: escapedNpcs.length,
-    customPool
+    customPool,
+    xpAdjustment
   };
 }
 

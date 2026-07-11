@@ -69,6 +69,7 @@ describe('combat logic', () => {
 
     expect(view[0]).not.toHaveProperty('currentHp');
     expect(view[0].bloodied).toBe(true);
+    expect(view[0].publicNameVisible).toBe(false);
     expect(view[0].effects).toHaveLength(1);
     expect(view[1].currentHp).toBe(22);
   });
@@ -86,6 +87,54 @@ describe('combat logic', () => {
     expect(result.totalXp).toBe(50);
     expect(result.xpPerPlayer).toBe(25);
     expect(result.defeatedNpcCount).toBe(1);
+  });
+
+  it('does not award xp for allied creatures', () => {
+    const result = calculateExperience(
+      [
+        combatant({ side: 'npc', isAlly: true, currentHp: 0, defeated: true, snapshot: creature({ xp: 200 }) }),
+        combatant({ side: 'npc', isAlly: false, currentHp: 0, defeated: true, snapshot: creature({ xp: 50 }) })
+      ],
+      [player({ active: true })]
+    );
+
+    expect(result.totalXp).toBe(50);
+    expect(result.defeatedNpcCount).toBe(1);
+  });
+
+  it('shares xp with selected allied creatures', () => {
+    const ally = combatant({ id: 'ally', side: 'npc', isAlly: true });
+    const result = calculateExperience(
+      [ally, combatant({ id: 'enemy', side: 'npc', currentHp: 0, defeated: true, snapshot: creature({ xp: 100 }) })],
+      [player({ active: true }), player({ active: true })],
+      { defeatedGiveXp: true, escapedXpMode: 'none', shareXpWithAllies: true, xpAllyIds: [ally.id] }
+    );
+
+    expect(result.totalXp).toBe(100);
+    expect(result.playerCount).toBe(2);
+    expect(result.allyRecipientCount).toBe(1);
+    expect(result.recipientCount).toBe(3);
+    expect(result.xpPerPlayer).toBe(33);
+  });
+
+  it('applies xp bonus or penalty to the total pool', () => {
+    const bonus = calculateExperience(
+      [combatant({ side: 'npc', currentHp: 0, defeated: true, snapshot: creature({ xp: 50 }) })],
+      [player({ active: true }), player({ active: true })],
+      { defeatedGiveXp: true, escapedXpMode: 'none', xpAdjustment: 25 }
+    );
+    const penalty = calculateExperience(
+      [combatant({ side: 'npc', currentHp: 0, defeated: true, snapshot: creature({ xp: 50 }) })],
+      [player({ active: true }), player({ active: true })],
+      { defeatedGiveXp: true, escapedXpMode: 'none', xpAdjustment: -75 }
+    );
+
+    expect(bonus.totalXp).toBe(75);
+    expect(bonus.xpPerPlayer).toBe(37);
+    expect(bonus.xpAdjustment).toBe(25);
+    expect(penalty.totalXp).toBe(0);
+    expect(penalty.xpPerPlayer).toBe(0);
+    expect(penalty.xpAdjustment).toBe(-75);
   });
 
   it('ticks timed effects and removes expired ones', () => {
@@ -123,11 +172,13 @@ function combatant(overrides: Partial<Combatant>): Combatant {
     turnOrder: 0,
     effects: [],
     publicNotes: '',
+    publicNameVisible: false,
     snapshot: creature({}),
     defeated: false,
     escaped: false,
     visible: true,
-    ...overrides
+    ...overrides,
+    isAlly: overrides.isAlly ?? false
   };
 }
 
@@ -187,6 +238,7 @@ function player(overrides: Partial<PlayerCharacter>): PlayerCharacter {
     initiativeMod: 0,
     passivePerception: 10,
     active: true,
+    imageUrl: '',
     notes: '',
     createdAt: timestamp,
     updatedAt: timestamp,

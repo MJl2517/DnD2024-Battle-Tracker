@@ -1,8 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
+  AppUpdateStatus,
   CombatantPatch,
   CompleteCombatOptions,
   CreateCampaignInput,
+  PublicDisplaySettings,
   PublicFeatureCard,
   PublicCombatView,
   SaveCreatureTemplateInput,
@@ -48,10 +50,21 @@ const api: TrackerApi = {
   dismissPublicFeatureCard: (campaignId: string) => ipcRenderer.invoke('player-window:dismiss-feature-card', campaignId),
   openPlayerWindow: (campaignId: string) => ipcRenderer.invoke('player-window:open', campaignId),
   getPlayerView: (campaignId: string) => ipcRenderer.invoke('player-window:view', campaignId),
+  getPublicDisplaySettings: () => ipcRenderer.invoke('settings:get-public-display'),
+  savePublicDisplaySettings: (settings: PublicDisplaySettings) => ipcRenderer.invoke('settings:save-public-display', settings),
   onPlayerView: (callback: (view: PublicCombatView) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, view: PublicCombatView): void => callback(view);
     ipcRenderer.on('player:view', listener);
     return () => ipcRenderer.removeListener('player:view', listener);
+  },
+  getUpdateStatus: () => ipcRenderer.invoke('update:get-status'),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateStatus: (callback: (status: AppUpdateStatus) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, status: AppUpdateStatus): void => callback(status);
+    ipcRenderer.on('update:status', listener);
+    return () => ipcRenderer.removeListener('update:status', listener);
   }
 };
 

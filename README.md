@@ -66,6 +66,59 @@ npm.cmd run dist
 
 Готовый installer создаётся в папке `release/`.
 
+Windows-сборка использует NSIS wizard: установщик показывает шаги установки, позволяет выбрать папку, создаёт ярлык на рабочем столе и пункт в меню Пуск.
+
+`npm.cmd run dist` использует `scripts/dist.ps1`. Скрипт готовит локальный cache Electron Builder в `.electron-builder-cache/` и обходит Windows-ошибку `Cannot create symbolic link` при распаковке `winCodeSign-2.6.0.7z`. Если сборщик всё равно не может скачать служебные NSIS-файлы, повторите команду с включённым интернетом.
+
+При удалении через Windows uninstaller спросит, удалять ли локальные данные приложения. Если выбрать удаление, будут очищены кампании, энкаунтеры, игроки, импортированные NPC и локальная SQLite-база из папки данных Electron. При обновлении версии данные не удаляются.
+
+## Обновления из приложения
+
+В настройках есть кнопка проверки обновлений. Она использует GitHub Releases репозитория `MJl2517/DnD2024-Battle-Tracker`.
+
+Для релиза нужно поднять версию в `package.json`, собрать и опубликовать installer вместе с `latest.yml`:
+
+```powershell
+npm.cmd run dist:publish
+```
+
+Для публикации через `electron-builder` потребуется GitHub token с правом создавать релизы. В dev-режиме проверка обновлений показывает справочное сообщение, потому что автообновление работает только в установленной сборке приложения.
+
+### Публикация GitHub Release
+
+После коммита можно собрать installer и опубликовать релиз отдельным скриптом:
+
+```powershell
+npm.cmd version patch
+npm.cmd run git:push -- "Release 0.1.1"
+npm.cmd run dist
+npm.cmd run release:publish
+```
+
+Скрипт `release:publish`:
+
+- берёт версию из `package.json`;
+- проверяет, что рабочее дерево закоммичено;
+- проверяет наличие `release\DnD 2024 Battle Tracker Setup <version>.exe`, `.blockmap` и `latest.yml`;
+- создаёт тег `v<version>`;
+- пушит ветку и тег;
+- создаёт или обновляет GitHub Release;
+- загружает installer, blockmap и `latest.yml`.
+
+Можно собрать и опубликовать одним шагом:
+
+```powershell
+npm.cmd run release:build-publish
+```
+
+Для авторизации установите GitHub CLI и выполните `gh auth login`, либо задайте переменную окружения `GH_TOKEN`/`GITHUB_TOKEN` с правами на создание релизов.
+
+Также есть CMD-обёртка для запуска вручную:
+
+```cmd
+scripts\github-release.cmd
+```
+
 ## GitHub
 
 Репозиторий:

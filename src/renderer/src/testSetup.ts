@@ -37,6 +37,13 @@ Object.defineProperty(window, 'dndTracker', {
     dismissPublicFeatureCard: vi.fn(),
     openPlayerWindow: vi.fn(),
     getPlayerView: vi.fn(),
-    onPlayerView: vi.fn(() => () => undefined)
+    onPlayerView: vi.fn(() => () => undefined),
+    getPublicDisplaySettings: vi.fn(),
+    savePublicDisplaySettings: vi.fn(),
+    getUpdateStatus: vi.fn(),
+    checkForUpdates: vi.fn(),
+    downloadUpdate: vi.fn(),
+    installUpdate: vi.fn(),
+    onUpdateStatus: vi.fn(() => () => undefined)
   }
 });

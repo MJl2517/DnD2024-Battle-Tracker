@@ -1,11 +1,14 @@
 import { join } from 'node:path';
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import electronUpdater from 'electron-updater';
 import { openAppDatabase } from './services/db';
 import { TrackerRepository } from './services/repository';
 import type {
+  AppUpdateStatus,
   CombatantPatch,
   CompleteCombatOptions,
   CreateCampaignInput,
+  PublicDisplaySettings,
   PublicFeatureCard,
   SaveCreatureTemplateInput,
   SaveEncounterGroupInput,
@@ -15,11 +18,271 @@ import type {
   SavePlayerInput
 } from '@shared/types';
 
+const { autoUpdater } = electronUpdater;
+
+type UpdaterInfo = {
+  version?: string;
+  releaseName?: string | null;
+  releaseDate?: string;
+  releaseNotes?: unknown;
+};
+
+type UpdaterProgress = {
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  bytesPerSecond?: number;
+};
+
+type GitHubRelease = {
+  tag_name?: string;
+  name?: string | null;
+  body?: string | null;
+  html_url?: string;
+  published_at?: string;
+  draft?: boolean;
+  prerelease?: boolean;
+};
+
+const UPDATE_REPOSITORY_OWNER = 'MJl2517';
+const UPDATE_REPOSITORY_NAME = 'DnD2024-Battle-Tracker';
+
+let mainWindow: BrowserWindow | null = null;
 let playerWindow: BrowserWindow | null = null;
+let playerWindowCampaignId: string | null = null;
 let repository: TrackerRepository;
+let updateStatus: AppUpdateStatus = {
+  status: 'idle',
+  currentVersion: app.getVersion()
+};
 
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
 const appIconPath = app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(__dirname, '../../build/icon.png');
+
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
+
+function normalizeReleaseNotes(releaseNotes: unknown): string | undefined {
+  if (typeof releaseNotes === 'string') {
+    return releaseNotes;
+  }
+
+  if (Array.isArray(releaseNotes)) {
+    return releaseNotes
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item === 'object' && 'note' in item && typeof item.note === 'string') return item.note;
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  return undefined;
+}
+
+function updateInfoPatch(info?: UpdaterInfo): Partial<AppUpdateStatus> {
+  if (!info) return {};
+  return {
+    version: info.version,
+    releaseName: info.releaseName ?? undefined,
+    releaseDate: info.releaseDate,
+    releaseNotes: normalizeReleaseNotes(info.releaseNotes)
+  };
+}
+
+function setUpdateStatus(patch: Partial<AppUpdateStatus>): AppUpdateStatus {
+  updateStatus = {
+    ...updateStatus,
+    ...patch,
+    currentVersion: app.getVersion()
+  };
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update:status', updateStatus);
+  }
+
+  return updateStatus;
+}
+
+function describeUpdateError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
+function normalizeVersion(version: string | undefined): string {
+  return (version || '').trim().replace(/^v/i, '');
+}
+
+function compareVersions(left: string, right: string): number {
+  const leftParts = normalizeVersion(left).split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = normalizeVersion(right).split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = leftParts[index] ?? 0;
+    const rightPart = rightParts[index] ?? 0;
+    if (leftPart > rightPart) return 1;
+    if (leftPart < rightPart) return -1;
+  }
+
+  return 0;
+}
+
+async function fetchLatestGitHubRelease(): Promise<GitHubRelease> {
+  const response = await fetch(`https://api.github.com/repos/${UPDATE_REPOSITORY_OWNER}/${UPDATE_REPOSITORY_NAME}/releases/latest`, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'DnD-2024-Battle-Tracker'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub Releases вернул ${response.status}. Проверьте, что в репозитории есть опубликованный release.`);
+  }
+
+  return (await response.json()) as GitHubRelease;
+}
+
+async function checkGitHubReleaseOnly(): Promise<AppUpdateStatus> {
+  try {
+    const release = await fetchLatestGitHubRelease();
+    const releaseVersion = normalizeVersion(release.tag_name);
+    const hasNewerRelease = releaseVersion ? compareVersions(releaseVersion, app.getVersion()) > 0 : false;
+
+    return setUpdateStatus({
+      status: hasNewerRelease ? 'available' : 'not-available',
+      version: releaseVersion || release.tag_name,
+      releaseName: release.name ?? undefined,
+      releaseDate: release.published_at,
+      releaseNotes: release.body ?? undefined,
+      releaseUrl: release.html_url,
+      canInstall: false,
+      message: hasNewerRelease
+        ? 'В GitHub Releases есть более новая версия. Скачивание и установка из приложения доступны только в установленной сборке.'
+        : 'В GitHub Releases нет версии новее текущей.'
+    });
+  } catch (err) {
+    return setUpdateStatus({
+      status: 'error',
+      canInstall: false,
+      message: describeUpdateError(err)
+    });
+  }
+}
+
+async function checkForAppUpdates(): Promise<AppUpdateStatus> {
+  if (!app.isPackaged) {
+    setUpdateStatus({
+      status: 'checking',
+      canInstall: false,
+      message: 'Проверяем последний GitHub Release. В dev-режиме обновление не устанавливается поверх исходников.'
+    });
+    return checkGitHubReleaseOnly();
+  }
+
+  setUpdateStatus({
+    status: 'checking',
+    canInstall: true,
+    message: 'Проверяем свежий релиз в GitHub Releases...'
+  });
+
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (err) {
+    setUpdateStatus({
+      status: 'error',
+      message: describeUpdateError(err)
+    });
+  }
+
+  return updateStatus;
+}
+
+async function downloadAppUpdate(): Promise<AppUpdateStatus> {
+  if (!app.isPackaged) {
+    return setUpdateStatus({
+      status: 'not-available',
+      message: 'Скачивание обновлений доступно только в установленной сборке приложения.'
+    });
+  }
+
+  setUpdateStatus({
+    status: 'downloading',
+    percent: 0,
+    canInstall: true,
+    message: 'Скачиваем обновление...'
+  });
+
+  try {
+    await autoUpdater.downloadUpdate();
+  } catch (err) {
+    setUpdateStatus({
+      status: 'error',
+      message: describeUpdateError(err)
+    });
+  }
+
+  return updateStatus;
+}
+
+function bindUpdaterEvents(): void {
+  autoUpdater.on('checking-for-update', () => {
+    setUpdateStatus({
+      status: 'checking',
+      message: 'Проверяем свежий релиз в GitHub Releases...'
+    });
+  });
+
+  autoUpdater.on('update-available', (info: UpdaterInfo) => {
+    setUpdateStatus({
+      ...updateInfoPatch(info),
+      status: 'available',
+      percent: undefined,
+      canInstall: true,
+      message: 'Найдена новая версия. Ее можно скачать и установить из приложения.'
+    });
+  });
+
+  autoUpdater.on('update-not-available', (info: UpdaterInfo) => {
+    setUpdateStatus({
+      ...updateInfoPatch(info),
+      status: 'not-available',
+      percent: undefined,
+      canInstall: true,
+      message: 'Установлена актуальная версия.'
+    });
+  });
+
+  autoUpdater.on('download-progress', (progress: UpdaterProgress) => {
+    setUpdateStatus({
+      status: 'downloading',
+      percent: progress.percent,
+      transferred: progress.transferred,
+      total: progress.total,
+      bytesPerSecond: progress.bytesPerSecond,
+      canInstall: true,
+      message: 'Скачиваем обновление...'
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info: UpdaterInfo) => {
+    setUpdateStatus({
+      ...updateInfoPatch(info),
+      status: 'downloaded',
+      percent: 100,
+      canInstall: true,
+      message: 'Обновление скачано. Перезапустите приложение для установки.'
+    });
+  });
+
+  autoUpdater.on('error', (err) => {
+    setUpdateStatus({
+      status: 'error',
+      message: describeUpdateError(err)
+    });
+  });
+}
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -45,9 +308,11 @@ function createWindow(): BrowserWindow {
   });
 
   window.on('closed', () => {
+    mainWindow = null;
     closePlayerWindow();
   });
 
+  mainWindow = window;
   loadRenderer(window);
   return window;
 }
@@ -56,14 +321,17 @@ function closePlayerWindow(): void {
   if (playerWindow && !playerWindow.isDestroyed()) {
     const windowToClose = playerWindow;
     playerWindow = null;
+    playerWindowCampaignId = null;
     windowToClose.close();
     return;
   }
 
   playerWindow = null;
+  playerWindowCampaignId = null;
 }
 
 function createPlayerWindow(campaignId: string): BrowserWindow {
+  playerWindowCampaignId = campaignId;
   if (playerWindow && !playerWindow.isDestroyed()) {
     playerWindow.focus();
     loadRenderer(playerWindow, `/player?campaignId=${encodeURIComponent(campaignId)}`);
@@ -88,6 +356,7 @@ function createPlayerWindow(campaignId: string): BrowserWindow {
   });
   playerWindow.on('closed', () => {
     playerWindow = null;
+    playerWindowCampaignId = null;
   });
   loadRenderer(playerWindow, `/player?campaignId=${encodeURIComponent(campaignId)}`);
   return playerWindow;
@@ -118,6 +387,21 @@ function broadcastPlayerView(campaignId: string): void {
 }
 
 function bindIpc(): void {
+  ipcMain.handle('update:get-status', () => updateStatus);
+  ipcMain.handle('update:check', () => checkForAppUpdates());
+  ipcMain.handle('update:download', () => downloadAppUpdate());
+  ipcMain.handle('update:install', () => {
+    autoUpdater.quitAndInstall(false, true);
+  });
+  ipcMain.handle('settings:get-public-display', () => repository.getPublicDisplaySettings());
+  ipcMain.handle('settings:save-public-display', (_event, input: PublicDisplaySettings) => {
+    const settings = repository.savePublicDisplaySettings(input);
+    if (playerWindowCampaignId) {
+      broadcastPlayerView(playerWindowCampaignId);
+    }
+    return settings;
+  });
+
   ipcMain.handle('campaign:list', () => repository.listCampaigns());
   ipcMain.handle('campaign:create', (_event, input: CreateCampaignInput) => repository.createCampaign(input));
   ipcMain.handle('campaign:delete', (_event, id: string) => repository.deleteCampaign(id));
@@ -216,6 +500,7 @@ function bindIpc(): void {
 
 app.whenReady().then(() => {
   repository = new TrackerRepository(openAppDatabase(app.getPath('userData')));
+  bindUpdaterEvents();
   bindIpc();
   createWindow();
 

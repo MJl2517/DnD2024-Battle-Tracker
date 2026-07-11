@@ -7,6 +7,7 @@ release/
 dist/
 .vite/
 .cache/
+.electron-builder-cache/
 coverage/
 
 # Local data and databases

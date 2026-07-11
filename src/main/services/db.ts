@@ -44,6 +44,12 @@ function runMigrations(db: Database.Database): void {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS player_characters (
       id TEXT PRIMARY KEY,
       campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
@@ -54,6 +60,7 @@ function runMigrations(db: Database.Database): void {
       initiative_mod INTEGER NOT NULL,
       passive_perception INTEGER NOT NULL,
       active INTEGER NOT NULL,
+      image_url TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -119,6 +126,7 @@ function runMigrations(db: Database.Database): void {
       initiative_override INTEGER,
       hp_mode TEXT NOT NULL DEFAULT 'average',
       hp_override INTEGER,
+      is_ally INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -158,6 +166,7 @@ function runMigrations(db: Database.Database): void {
       active_combatant_id TEXT,
       total_xp INTEGER NOT NULL,
       xp_per_player INTEGER NOT NULL,
+      xp_ally_count INTEGER NOT NULL DEFAULT 0,
       started_at TEXT NOT NULL,
       ended_at TEXT
     );
@@ -169,6 +178,7 @@ function runMigrations(db: Database.Database): void {
       player_id TEXT,
       name TEXT NOT NULL,
       side TEXT NOT NULL,
+      is_ally INTEGER NOT NULL DEFAULT 0,
       armor_class INTEGER NOT NULL,
       base_armor_class INTEGER NOT NULL DEFAULT 0,
       max_hp INTEGER NOT NULL,
@@ -182,6 +192,7 @@ function runMigrations(db: Database.Database): void {
       turn_order INTEGER NOT NULL,
       effects_json TEXT NOT NULL,
       public_notes TEXT NOT NULL DEFAULT '',
+      public_name_visible INTEGER NOT NULL DEFAULT 0,
       snapshot_json TEXT,
       defeated INTEGER NOT NULL,
       escaped INTEGER NOT NULL DEFAULT 0,
@@ -201,6 +212,8 @@ function runMigrations(db: Database.Database): void {
   addColumnIfMissing(db, 'encounter_creature_groups', 'hp_mode', "TEXT NOT NULL DEFAULT 'average'");
   addColumnIfMissing(db, 'encounter_creature_groups', 'initiative_advantage', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'encounter_creature_groups', 'initiative_override', 'INTEGER');
+  addColumnIfMissing(db, 'encounter_creature_groups', 'is_ally', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'player_characters', 'image_url', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing(db, 'encounter_player_settings', 'participating', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing(db, 'creature_templates', 'token_url', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing(db, 'creature_templates', 'lair_name', "TEXT NOT NULL DEFAULT ''");
@@ -212,6 +225,9 @@ function runMigrations(db: Database.Database): void {
   addColumnIfMissing(db, 'combatants', 'base_armor_class', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'combatants', 'base_max_hp', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing(db, 'combatants', 'temporary_hp', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'combatants', 'public_name_visible', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'combatants', 'is_ally', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'combat_sessions', 'xp_ally_count', 'INTEGER NOT NULL DEFAULT 0');
   db.exec(`
     UPDATE combatants SET base_armor_class = armor_class WHERE base_armor_class = 0;
     UPDATE combatants SET base_max_hp = max_hp WHERE base_max_hp = 1 AND max_hp <> 1;

@@ -15,6 +15,7 @@ import {
   toPublicCombatants
 } from '@shared/combat';
 import { CONCENTRATION_STATUS_ID, UNCONSCIOUS_DEPENDENCY_STATUS_IDS, addStatusEffects, removeStatusEffects } from '@shared/statusEffects';
+import { DEFAULT_PUBLIC_DISPLAY_SETTINGS } from '@shared/types';
 import type {
   AbilityBlock,
   Campaign,
@@ -35,6 +36,7 @@ import type {
   PlayerCharacter,
   PublicFeatureCard,
   PublicCombatView,
+  PublicDisplaySettings,
   SaveCreatureTemplateInput,
   SaveEncounterGroupInput,
   SaveEncounterInput,
@@ -62,6 +64,26 @@ export class TrackerRepository {
   private readonly publicFeatureCards = new Map<string, PublicFeatureCard>();
 
   constructor(private readonly database: AppDatabase) {}
+
+  getPublicDisplaySettings(): PublicDisplaySettings {
+    const row = this.database.sqlite.prepare('SELECT value FROM app_settings WHERE key = ?').get('public_display') as Row | undefined;
+    const saved = parseJson<Partial<PublicDisplaySettings>>(row?.value, {});
+    return normalizePublicDisplaySettings(saved);
+  }
+
+  savePublicDisplaySettings(input: PublicDisplaySettings): PublicDisplaySettings {
+    const settings = normalizePublicDisplaySettings(input);
+    this.database.sqlite
+      .prepare(
+        `
+        INSERT INTO app_settings (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `
+      )
+      .run('public_display', json(settings), now());
+    return settings;
+  }
 
   listCampaigns(): Campaign[] {
     return this.database.sqlite
@@ -122,6 +144,7 @@ export class TrackerRepository {
       initiativeMod: clamp(input.initiativeMod, -20, 30),
       passivePerception: clamp(input.passivePerception, 1, 40),
       active: input.active,
+      imageUrl: input.imageUrl?.trim() ?? '',
       notes: input.notes?.trim() ?? '',
       createdAt: existing ? String(existing.created_at) : timestamp,
       updatedAt: timestamp
@@ -132,10 +155,10 @@ export class TrackerRepository {
         `
         INSERT INTO player_characters (
           id, campaign_id, name, level, armor_class, max_hp, initiative_mod,
-          passive_perception, active, notes, created_at, updated_at
+          passive_perception, active, image_url, notes, created_at, updated_at
         ) VALUES (
           @id, @campaignId, @name, @level, @armorClass, @maxHp, @initiativeMod,
-          @passivePerception, @active, @notes, @createdAt, @updatedAt
+          @passivePerception, @active, @imageUrl, @notes, @createdAt, @updatedAt
         )
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
@@ -145,6 +168,7 @@ export class TrackerRepository {
           initiative_mod = excluded.initiative_mod,
           passive_perception = excluded.passive_perception,
           active = excluded.active,
+          image_url = excluded.image_url,
           notes = excluded.notes,
           updated_at = excluded.updated_at
       `
@@ -368,6 +392,7 @@ export class TrackerRepository {
       initiativeOverride: input.initiativeOverride == null ? null : clamp(input.initiativeOverride, -99, 99),
       hpMode: normalizeHitPointMode(input.hpMode, input.hpOverride),
       hpOverride: input.hpOverride == null ? null : clamp(input.hpOverride, 1, 9999),
+      isAlly: Boolean(input.isAlly),
       createdAt: existing ? String(existing.created_at) : timestamp,
       updatedAt: timestamp
     };
@@ -377,10 +402,10 @@ export class TrackerRepository {
         `
         INSERT INTO encounter_creature_groups (
           id, encounter_id, template_id, display_name, quantity, initiative_mode,
-          initiative_advantage, initiative_override, hp_mode, hp_override, created_at, updated_at
+          initiative_advantage, initiative_override, hp_mode, hp_override, is_ally, created_at, updated_at
         ) VALUES (
           @id, @encounterId, @templateId, @displayName, @quantity, @initiativeMode,
-          @initiativeAdvantage, @initiativeOverride, @hpMode, @hpOverride, @createdAt, @updatedAt
+          @initiativeAdvantage, @initiativeOverride, @hpMode, @hpOverride, @isAlly, @createdAt, @updatedAt
         )
         ON CONFLICT(id) DO UPDATE SET
           template_id = excluded.template_id,
@@ -391,6 +416,7 @@ export class TrackerRepository {
           initiative_override = excluded.initiative_override,
           hp_mode = excluded.hp_mode,
           hp_override = excluded.hp_override,
+          is_ally = excluded.is_ally,
           updated_at = excluded.updated_at
       `
       )
@@ -532,6 +558,7 @@ export class TrackerRepository {
         playerId: player.id,
         name: player.name,
         side: 'player',
+        isAlly: false,
         armorClass: player.armorClass,
         baseArmorClass: player.armorClass,
         maxHp: player.maxHp,
@@ -545,6 +572,7 @@ export class TrackerRepository {
         turnOrder: combatants.length,
         effects: [],
         publicNotes: '',
+        publicNameVisible: true,
         snapshot: player,
         defeated: false,
         escaped: false,
@@ -560,6 +588,7 @@ export class TrackerRepository {
         playerId: null,
         name: encounter.lair.name,
         side: 'npc',
+        isAlly: false,
         armorClass: 0,
         baseArmorClass: 0,
         maxHp: 1,
@@ -573,6 +602,7 @@ export class TrackerRepository {
         turnOrder: combatants.length,
         effects: [],
         publicNotes: encounter.lair.description,
+        publicNameVisible: false,
         snapshot: encounter.lair,
         defeated: false,
         escaped: false,
@@ -594,6 +624,7 @@ export class TrackerRepository {
           playerId: null,
           name: `${group.displayName}${suffix}`,
           side: 'npc',
+          isAlly: group.isAlly,
           armorClass: template.armorClass,
           baseArmorClass: template.armorClass,
           maxHp,
@@ -607,6 +638,7 @@ export class TrackerRepository {
           turnOrder: combatants.length,
           effects: [],
           publicNotes: '',
+          publicNameVisible: false,
           snapshot: template,
           defeated: false,
           escaped: false,
@@ -627,8 +659,8 @@ export class TrackerRepository {
           `
           INSERT INTO combat_sessions (
             id, campaign_id, encounter_id, round, status, active_combatant_id,
-            total_xp, xp_per_player, started_at, ended_at
-          ) VALUES (?, ?, ?, 1, 'active', ?, 0, 0, ?, NULL)
+            total_xp, xp_per_player, xp_ally_count, started_at, ended_at
+          ) VALUES (?, ?, ?, 1, 'active', ?, 0, 0, 0, ?, NULL)
         `
         )
         .run(sessionId, campaignId, encounterId, activeCombatantId, timestamp);
@@ -636,13 +668,13 @@ export class TrackerRepository {
       const statement = this.database.sqlite.prepare(
         `
         INSERT INTO combatants (
-          id, session_id, template_id, player_id, name, side, armor_class, base_armor_class,
+          id, session_id, template_id, player_id, name, side, is_ally, armor_class, base_armor_class,
           max_hp, base_max_hp, current_hp, temporary_hp, initiative, initiative_mod, initiative_group_id, initiative_mode,
-          turn_order, effects_json, public_notes, snapshot_json, defeated, escaped, visible
+          turn_order, effects_json, public_notes, public_name_visible, snapshot_json, defeated, escaped, visible
         ) VALUES (
-          @id, @sessionId, @templateId, @playerId, @name, @side, @armorClass, @baseArmorClass,
+          @id, @sessionId, @templateId, @playerId, @name, @side, @isAlly, @armorClass, @baseArmorClass,
           @maxHp, @baseMaxHp, @currentHp, @temporaryHp, @initiative, @initiativeMod, @initiativeGroupId, @initiativeMode,
-          @turnOrder, @effectsJson, @publicNotes, @snapshotJson, @defeated, @escaped, @visible
+          @turnOrder, @effectsJson, @publicNotes, @publicNameVisible, @snapshotJson, @defeated, @escaped, @visible
         )
       `
       );
@@ -697,6 +729,7 @@ export class TrackerRepository {
     if (patch.initiative !== undefined) set('initiative', 'initiative', Math.round(patch.initiative));
     if (patch.turnOrder !== undefined) set('turn_order', 'turnOrder', Math.max(0, Math.round(patch.turnOrder)));
     if (patch.publicNotes !== undefined) set('public_notes', 'publicNotes', patch.publicNotes);
+    if (patch.publicNameVisible !== undefined) set('public_name_visible', 'publicNameVisible', patch.publicNameVisible ? 1 : 0);
     if (patch.defeated !== undefined) {
       defeatedAfterPatch = patch.defeated;
       set('defeated', 'defeatedPatch', patch.defeated ? 1 : 0);
@@ -848,11 +881,11 @@ export class TrackerRepository {
       .prepare(
         `
         UPDATE combat_sessions
-        SET status = 'completed', total_xp = ?, xp_per_player = ?, ended_at = ?
+        SET status = 'completed', total_xp = ?, xp_per_player = ?, xp_ally_count = ?, ended_at = ?
         WHERE id = ?
       `
       )
-      .run(result.totalXp, result.xpPerPlayer, endedAt, sessionId);
+      .run(result.totalXp, result.xpPerPlayer, result.allyRecipientCount, endedAt, sessionId);
 
     return {
       session: this.getCombatSession(sessionId),
@@ -866,9 +899,10 @@ export class TrackerRepository {
   getPlayerView(campaignId: string): PublicCombatView {
     const session = this.getActiveSession(campaignId);
     const featureCard = this.publicFeatureCards.get(campaignId) ?? null;
+    const settings = this.getPublicDisplaySettings();
     return session
-      ? { round: session.round, combatants: toPublicCombatants(session.combatants, session.activeCombatantId), featureCard }
-      : { round: 1, combatants: [], featureCard, xpAward: this.getLatestCompletedXpAward(campaignId) };
+      ? { round: session.round, combatants: toPublicCombatants(session.combatants, session.activeCombatantId), settings, featureCard }
+      : { round: 1, combatants: [], settings, featureCard, xpAward: this.getLatestCompletedXpAward(campaignId) };
   }
 
   showPublicFeatureCard(campaignId: string, card: PublicFeatureCard): void {
@@ -891,15 +925,18 @@ export class TrackerRepository {
     if (this.dismissedXpAwardSessionIds.has(session.id)) return null;
     const playerCount = session.combatants.filter((combatant) => combatant.side === 'player').length;
     const defeatedNpcCount = session.combatants.filter(
-      (combatant) => combatant.side === 'npc' && !combatant.escaped && (combatant.defeated || combatant.currentHp <= 0)
+      (combatant) => combatant.side === 'npc' && !combatant.isAlly && !combatant.escaped && (combatant.defeated || combatant.currentHp <= 0)
     ).length;
-    const escapedNpcCount = session.combatants.filter((combatant) => combatant.side === 'npc' && combatant.escaped).length;
+    const escapedNpcCount = session.combatants.filter((combatant) => combatant.side === 'npc' && !combatant.isAlly && combatant.escaped).length;
     return {
       totalXp: session.totalXp,
       xpPerPlayer: session.xpPerPlayer,
       playerCount,
+      allyRecipientCount: session.xpAllyCount,
+      recipientCount: playerCount + session.xpAllyCount,
       defeatedNpcCount,
       escapedNpcCount,
+      xpAdjustment: 0,
       customPool: false
     };
   }
@@ -995,6 +1032,7 @@ export class TrackerRepository {
       activeCombatantId: row.active_combatant_id ? String(row.active_combatant_id) : null,
       totalXp: Number(row.total_xp),
       xpPerPlayer: Number(row.xp_per_player),
+      xpAllyCount: Number(row.xp_ally_count ?? 0),
       startedAt: String(row.started_at),
       endedAt: row.ended_at ? String(row.ended_at) : null,
       combatants
@@ -1023,6 +1061,7 @@ function rowToPlayer(row: Row): PlayerCharacter {
     initiativeMod: Number(row.initiative_mod),
     passivePerception: Number(row.passive_perception),
     active: Boolean(row.active),
+    imageUrl: String(row.image_url ?? ''),
     notes: String(row.notes ?? ''),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
@@ -1097,6 +1136,7 @@ function rowToEncounterGroup(row: Row): EncounterCreatureGroup {
     initiativeOverride: row.initiative_override == null ? null : Number(row.initiative_override),
     hpMode: normalizeHitPointMode(row.hp_mode === 'random' || row.hp_mode === 'fixed' ? row.hp_mode : 'average', row.hp_override == null ? null : Number(row.hp_override)),
     hpOverride: row.hp_override == null ? null : Number(row.hp_override),
+    isAlly: Boolean(row.is_ally),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
@@ -1136,7 +1176,8 @@ function rowToEncounterLair(row: Row): EncounterLair {
 function toEncounterGroupParams(group: EncounterCreatureGroup): Record<string, unknown> {
   return {
     ...group,
-    initiativeAdvantage: group.initiativeAdvantage ? 1 : 0
+    initiativeAdvantage: group.initiativeAdvantage ? 1 : 0,
+    isAlly: group.isAlly ? 1 : 0
   };
 }
 
@@ -1173,6 +1214,7 @@ function rowToCombatant(row: Row): Combatant {
     playerId: row.player_id ? String(row.player_id) : null,
     name: String(row.name),
     side: row.side === 'player' ? 'player' : 'npc',
+    isAlly: Boolean(row.is_ally),
     armorClass: Number(row.armor_class),
     baseArmorClass: Number(row.base_armor_class ?? row.armor_class),
     maxHp: Number(row.max_hp),
@@ -1186,6 +1228,7 @@ function rowToCombatant(row: Row): Combatant {
     turnOrder: Number(row.turn_order),
     effects: parseJson<CombatEffect[]>(row.effects_json, []),
     publicNotes: String(row.public_notes ?? ''),
+    publicNameVisible: Boolean(row.public_name_visible ?? row.side === 'player'),
     snapshot: parseJson<Combatant['snapshot']>(row.snapshot_json, null),
     defeated: Boolean(row.defeated),
     escaped: Boolean(row.escaped),
@@ -1226,6 +1269,8 @@ function toCombatantParams(combatant: Combatant): Record<string, unknown> {
     baseMaxHp: combatant.baseMaxHp ?? combatant.maxHp,
     effectsJson: json(combatant.effects),
     snapshotJson: combatant.snapshot ? json(combatant.snapshot) : null,
+    publicNameVisible: combatant.publicNameVisible ? 1 : 0,
+    isAlly: combatant.isAlly ? 1 : 0,
     defeated: combatant.defeated ? 1 : 0,
     escaped: combatant.escaped ? 1 : 0,
     visible: combatant.visible ? 1 : 0
@@ -1239,6 +1284,14 @@ function parseJson<T>(value: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function normalizePublicDisplaySettings(input: Partial<PublicDisplaySettings>): PublicDisplaySettings {
+  return {
+    showEnemyArmorClass: input.showEnemyArmorClass ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS.showEnemyArmorClass,
+    showEnemySpeeds: input.showEnemySpeeds ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS.showEnemySpeeds,
+    hideCreatureNames: input.hideCreatureNames ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS.hideCreatureNames
+  };
 }
 
 function json(value: unknown): string {

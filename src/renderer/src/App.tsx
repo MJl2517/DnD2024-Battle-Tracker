@@ -1,7 +1,9 @@
-import { type CSSProperties, FormEvent, MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, FormEvent, MouseEvent, PointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Activity,
+  ArrowDown,
+  ArrowUp,
   BookOpen,
   ChevronDown,
   ChevronLeft,
@@ -14,6 +16,7 @@ import {
   EyeOff,
   HeartPulse,
   Info,
+  Keyboard,
   LogOut,
   MonitorUp,
   Play,
@@ -30,6 +33,7 @@ import {
 } from 'lucide-react';
 import type {
   AbilityBlock,
+  AppUpdateStatus,
   Campaign,
   CampaignDetail,
   CombatEffect,
@@ -51,10 +55,12 @@ import type {
   PublicFeatureCard,
   PublicCombatant,
   PublicCombatView,
+  PublicDisplaySettings,
   SaveCreatureTemplateInput,
   SpellCard
 } from '@shared/types';
 import { calculateExperience, describeInitiativeMode, isBloodied } from '@shared/combat';
+import { calculateEncounterDifficulty, type EncounterDifficultyResult } from '@shared/encounterDifficulty';
 import {
   CONCENTRATION_STATUS_ID,
   UNCONSCIOUS_DEPENDENCY_STATUS_IDS,
@@ -64,6 +70,7 @@ import {
   STATUS_EFFECTS,
   type StatusEffectDefinition
 } from '@shared/statusEffects';
+import { DEFAULT_PUBLIC_DISPLAY_SETTINGS } from '@shared/types';
 
 type TabKey = 'combat' | 'encounters' | 'library' | 'players';
 type SelectOption = {
@@ -73,10 +80,26 @@ type SelectOption = {
   icon?: string;
 };
 
+type PopoverAnchor = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
+
+type PublicHpEvent = {
+  id: string;
+  combatantId: string;
+  amount: number;
+  kind: 'damage' | 'healing';
+};
+
 const api = window.dndTracker;
 const HOLD_DELETE_MS = 900;
 const PLAYER_CARD_STEP = 730;
 const PLAYER_CARD_CENTER = 365;
+const PLAYER_SLIDER_REPEAT = 11;
+const PLAYER_SLIDER_MIDDLE_REPEAT = Math.floor(PLAYER_SLIDER_REPEAT / 2);
 const PLAYER_ORDER_ROW_STEP = 148;
 const PLAYER_ORDER_ROW_CENTER = 74;
 
@@ -245,7 +268,7 @@ function MasterApp(): JSX.Element {
         </div>
       </aside>
 
-      <main className="workspace">
+      <main className={`workspace ${tab === 'players' ? 'players-workspace' : ''}`}>
         <header className="topbar">
           <div>
             <p className="eyebrow">Профиль кампании</p>
@@ -315,7 +338,53 @@ function MasterApp(): JSX.Element {
 }
 
 function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
-  const [updateStatus, setUpdateStatus] = useState('');
+  const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus | null>(null);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [displaySettings, setDisplaySettings] = useState<PublicDisplaySettings>(DEFAULT_PUBLIC_DISPLAY_SETTINGS);
+  const [displayBusy, setDisplayBusy] = useState(false);
+  const [displayError, setDisplayError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api.getUpdateStatus().then(setUpdateStatus);
+    void api.getPublicDisplaySettings().then(setDisplaySettings);
+    return api.onUpdateStatus(setUpdateStatus);
+  }, []);
+
+  async function saveDisplaySettings(patch: Partial<PublicDisplaySettings>): Promise<void> {
+    const nextSettings = { ...displaySettings, ...patch };
+    setDisplaySettings(nextSettings);
+    setDisplayBusy(true);
+    setDisplayError(null);
+    try {
+      setDisplaySettings(await api.savePublicDisplaySettings(nextSettings));
+    } catch (err) {
+      setDisplaySettings(displaySettings);
+      setDisplayError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDisplayBusy(false);
+    }
+  }
+
+  async function runUpdateAction(action: () => Promise<AppUpdateStatus | void>): Promise<void> {
+    setUpdateBusy(true);
+    try {
+      const nextStatus = await action();
+      if (nextStatus) {
+        setUpdateStatus(nextStatus);
+      }
+    } catch (err) {
+      setUpdateStatus({
+        status: 'error',
+        currentVersion: updateStatus?.currentVersion ?? 'dev',
+        message: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      setUpdateBusy(false);
+    }
+  }
+
+  const updateSummary = describeUpdateStatus(updateStatus);
+  const updatePercent = Math.max(0, Math.min(100, Math.round(updateStatus?.percent ?? 0)));
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -331,31 +400,125 @@ function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
         </header>
 
         <div className="settings-list">
+          <article className="settings-row display-settings-row">
+            <div>
+              <h3>Экран игроков</h3>
+              <p>Настройки публичной информации на большом экране. Игроки по-прежнему не видят точные хиты врагов.</p>
+              {displayError && <span className="settings-error">{displayError}</span>}
+            </div>
+            <div className="settings-toggle-list">
+              <label className={`settings-toggle ${displaySettings.showEnemyArmorClass ? 'active' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={displaySettings.showEnemyArmorClass}
+                  disabled={displayBusy}
+                  onChange={(event) => void saveDisplaySettings({ showEnemyArmorClass: event.currentTarget.checked })}
+                />
+                <span aria-hidden="true" />
+                <strong>Показывать КД врагов</strong>
+              </label>
+              <label className={`settings-toggle ${displaySettings.showEnemySpeeds ? 'active' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={displaySettings.showEnemySpeeds}
+                  disabled={displayBusy}
+                  onChange={(event) => void saveDisplaySettings({ showEnemySpeeds: event.currentTarget.checked })}
+                />
+                <span aria-hidden="true" />
+                <strong>Показывать скорость врагов</strong>
+              </label>
+              <label className={`settings-toggle ${displaySettings.hideCreatureNames ? 'active' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={displaySettings.hideCreatureNames}
+                  disabled={displayBusy}
+                  onChange={(event) => void saveDisplaySettings({ hideCreatureNames: event.currentTarget.checked })}
+                />
+                <span aria-hidden="true" />
+                <strong>Скрывать имена существ</strong>
+              </label>
+            </div>
+          </article>
+
           <article className="settings-row">
             <div>
               <h3>Обновления</h3>
-              <p>Проверка обновлений будет подключена к GitHub updater в одной из следующих версий.</p>
+              <p>Обновить из GitHub.</p>
+              <span className="settings-version">Текущая версия: {updateStatus?.currentVersion ?? '...'}</span>
             </div>
-            <button
-              className="button secondary"
-              type="button"
-              onClick={() => setUpdateStatus('Автообновление пока не подключено. Кнопка подготовлена под будущую интеграцию.')}
-            >
-              <Settings size={18} />
-              Проверить обновления
-            </button>
+            <div className="update-actions">
+              <button className="button secondary" type="button" disabled={updateBusy} onClick={() => void runUpdateAction(api.checkForUpdates)}>
+                <Settings size={18} />
+                Проверить обновления
+              </button>
+              {updateStatus?.status === 'available' && updateStatus.canInstall !== false && (
+                <button className="button primary" type="button" disabled={updateBusy} onClick={() => void runUpdateAction(api.downloadUpdate)}>
+                  <UploadCloud size={18} />
+                  Скачать
+                </button>
+              )}
+              {updateStatus?.status === 'downloaded' && (
+                <button className="button primary" type="button" disabled={updateBusy} onClick={() => void runUpdateAction(api.installUpdate)}>
+                  <Play size={18} />
+                  Установить
+                </button>
+              )}
+            </div>
           </article>
 
-          {updateStatus && (
+          {updateSummary && (
             <div className="notice settings-status">
               <Info size={18} />
-              {updateStatus}
+              <div>
+                <strong>{updateSummary.title}</strong>
+                <span>{updateSummary.message}</span>
+              </div>
+            </div>
+          )}
+
+          {updateStatus?.status === 'downloading' && (
+            <div className="update-progress" aria-label="Прогресс скачивания обновления">
+              <span className="update-progress-bar" style={{ width: `${updatePercent}%` }} />
+              <strong>{updatePercent}%</strong>
             </div>
           )}
         </div>
       </section>
     </div>
   );
+}
+
+function describeUpdateStatus(status: AppUpdateStatus | null): { title: string; message: string } | null {
+  if (!status) return null;
+
+  const targetVersion = status.version ? ` ${status.version}` : '';
+  const message = status.message || '';
+
+  if (status.status === 'checking') {
+    return { title: 'Проверка обновления', message: message || 'Проверяем GitHub Releases...' };
+  }
+
+  if (status.status === 'available') {
+    return { title: `Доступна версия${targetVersion}`, message: message || 'Можно скачать обновление.' };
+  }
+
+  if (status.status === 'downloading') {
+    return { title: `Скачивание версии${targetVersion}`, message: message || 'Файл обновления загружается.' };
+  }
+
+  if (status.status === 'downloaded') {
+    return { title: `Версия${targetVersion} готова`, message: message || 'Нажмите “Установить”, приложение перезапустится.' };
+  }
+
+  if (status.status === 'not-available') {
+    return { title: 'Обновления не найдены', message: message || 'Установлена актуальная версия.' };
+  }
+
+  if (status.status === 'error') {
+    return { title: 'Не удалось проверить обновление', message: message || 'Проверьте интернет и наличие релиза на GitHub.' };
+  }
+
+  return null;
 }
 
 function CampaignSwitcher({
@@ -520,40 +683,228 @@ function PlayersPanel({
   onRefresh: () => Promise<void>;
 }): JSX.Element {
   const [draft, setDraft] = useState(() => emptyPlayer(detail.campaign.id));
+  const [importMessage, setImportMessage] = useState('');
+  const [importError, setImportError] = useState('');
+  const [importInfoOpen, setImportInfoOpen] = useState(false);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const lssFileInputRef = useRef<HTMLInputElement | null>(null);
+  const playerImportRef = useRef<HTMLDivElement | null>(null);
+  const playerFormRef = useRef<HTMLFormElement | null>(null);
 
   useEffect(() => setDraft(emptyPlayer(detail.campaign.id)), [detail.campaign.id]);
+
+  useEffect(() => {
+    function closeOnOutsidePointer(event: globalThis.PointerEvent): void {
+      if (!playerImportRef.current?.contains(event.target as Node)) {
+        setImportInfoOpen(false);
+        setImportMenuOpen(false);
+      }
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
+  }, []);
+
+  useEffect(() => {
+    function handlePlayerNumberWheel(event: WheelEvent): void {
+      const input = document.activeElement;
+      if (!(input instanceof HTMLInputElement)) return;
+      if (!playerFormRef.current?.contains(input) || input.type !== 'number') return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      const step = event.deltaY < 0 ? 1 : -1;
+
+      setDraft((current) => {
+        switch (input.name) {
+          case 'level':
+            return { ...current, level: Math.max(1, current.level + step) };
+          case 'armorClass':
+            return { ...current, armorClass: Math.max(0, current.armorClass + step) };
+          case 'maxHp':
+            return { ...current, maxHp: Math.max(1, current.maxHp + step) };
+          case 'initiativeMod':
+            return { ...current, initiativeMod: current.initiativeMod + step };
+          case 'passivePerception':
+            return { ...current, passivePerception: Math.max(1, current.passivePerception + step) };
+          default:
+            return current;
+        }
+      });
+    }
+
+    window.addEventListener('wheel', handlePlayerNumberWheel, { passive: false, capture: true });
+    return () => window.removeEventListener('wheel', handlePlayerNumberWheel, { capture: true });
+  }, []);
 
   async function save(event: FormEvent): Promise<void> {
     event.preventDefault();
     await run(() => api.savePlayer(draft));
     setDraft(emptyPlayer(detail.campaign.id));
+    setImportMessage('');
+    setImportError('');
     await onRefresh();
   }
 
+  function applyLssImport(payload: unknown): void {
+    const imported = importPlayerFromLss(payload, detail.campaign.id);
+    setDraft(imported);
+    setImportError('');
+    setImportMessage(`Импортирован персонаж: ${imported.name}. Проверьте поля и нажмите “Сохранить”.`);
+  }
+
+  async function importLssFiles(fileList: FileList | null | undefined): Promise<void> {
+    const files = Array.from(fileList ?? []);
+    if (!files.length) return;
+
+    try {
+      const players: PlayerCharacter[] = [];
+      const errors: string[] = [];
+
+      for (const file of files) {
+        try {
+          players.push(importPlayerFromLss(JSON.parse(await file.text()), detail.campaign.id));
+        } catch (err) {
+          errors.push(`${file.name}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      if (!players.length) {
+        throw new Error(errors.join('\n') || 'Не удалось прочитать LSS JSON.');
+      }
+
+      if (files.length === 1 && players.length === 1) {
+        setDraft(players[0]);
+        setImportError(errors.join('\n'));
+        setImportMessage(`Импортирован персонаж: ${players[0].name}. Проверьте поля и нажмите “Сохранить”.`);
+        return;
+      }
+
+      let savedCount = 0;
+      for (const player of players) {
+        const saved = await run(() => api.savePlayer(player));
+        if (saved) savedCount += 1;
+      }
+
+      setDraft(emptyPlayer(detail.campaign.id));
+      setImportError(errors.join('\n'));
+      setImportMessage(`Пакетный импорт LSS: сохранено персонажей ${savedCount} из ${players.length}.`);
+      await onRefresh();
+    } catch (err) {
+      setImportMessage('');
+      setImportError(err instanceof Error ? err.message : 'Не удалось прочитать LSS JSON.');
+    } finally {
+      setImportMenuOpen(false);
+      if (lssFileInputRef.current) lssFileInputRef.current.value = '';
+    }
+  }
+
+  async function importLssFromClipboard(): Promise<void> {
+    try {
+      const text = await navigator.clipboard?.readText?.();
+      if (!text?.trim()) throw new Error('Буфер обмена пуст или недоступен.');
+      applyLssImport(JSON.parse(text));
+      setImportMenuOpen(false);
+    } catch (err) {
+      setImportMessage('');
+      setImportError(err instanceof Error ? err.message : 'Не удалось импортировать LSS JSON из буфера.');
+    }
+  }
+
   return (
-    <section className="panel-grid two-columns">
-      <div className="panel">
-        <PanelTitle icon={<Users size={22} />} title={draft.id ? 'Редактировать игрока' : 'Добавить игрока'} />
-        <form className="form-grid" onSubmit={(event) => void save(event)}>
+    <section className="panel-grid two-columns players-layout">
+      <div className="panel player-editor-panel">
+        <div className="panel-title split" ref={playerImportRef}>
+          <div className="panel-title inline-title player-title">
+            <Users size={22} />
+            <h2>{draft.id ? 'Редактировать игрока' : 'Добавить игрока'}</h2>
+            <button
+              className="icon-button import-info-button"
+              type="button"
+              aria-label="Как импортировать персонажей из LSS"
+              aria-expanded={importInfoOpen}
+              onClick={() => setImportInfoOpen((current) => !current)}
+            >
+              <Info size={18} />
+            </button>
+            {importInfoOpen && (
+              <div className="import-info-popover player-import-info-popover">
+                <h3>Импорт Long Story Short</h3>
+                <p>В LSS откройте персонажа, найдите экспорт/сохранение персонажа и выгрузите JSON-файл.</p>
+                <p>Один файл заполнит форму для проверки. Несколько выбранных JSON-файлов будут сохранены в кампанию сразу.</p>
+                <p>Если в JSON есть портрет, аватар или image URL, он попадёт в поле арта персонажа.</p>
+              </div>
+            )}
+          </div>
+          <div className="player-import-actions">
+            <input
+              ref={lssFileInputRef}
+              className="visually-hidden"
+              type="file"
+              accept=".json,application/json"
+              multiple
+              onChange={(event) => void importLssFiles(event.target.files)}
+            />
+            <div className={`player-import-dropdown ${importMenuOpen ? 'open' : ''}`}>
+              <button className="button secondary" type="button" disabled={busy} aria-expanded={importMenuOpen} onClick={() => setImportMenuOpen((current) => !current)}>
+                <UploadCloud size={18} />
+                Импорт LSS
+                <ChevronDown size={17} />
+              </button>
+              {importMenuOpen && (
+                <div className="player-import-menu">
+                  <button className="player-import-menu-item" type="button" onClick={() => lssFileInputRef.current?.click()}>
+                    <UploadCloud size={18} />
+                    <span>
+                      <strong>Выбрать JSON-файлы</strong>
+                      <small>Один файл для проверки или несколько для пакетного импорта</small>
+                    </span>
+                  </button>
+                  <button className="player-import-menu-item" type="button" onClick={() => void importLssFromClipboard()}>
+                    <ClipboardPaste size={18} />
+                    <span>
+                      <strong>Вставить из буфера</strong>
+                      <small>Заполнит форму одним персонажем из JSON</small>
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        {importMessage && (
+          <div className="notice player-import-notice">
+            <Info size={18} />
+            {importMessage}
+          </div>
+        )}
+        {importError && (
+          <div className="notice error player-import-notice">
+            <Info size={18} />
+            {importError}
+          </div>
+        )}
+        <form ref={playerFormRef} className="form-grid player-form" onSubmit={(event) => void save(event)}>
           <label>
             Имя
             <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
           </label>
           <label>
             Уровень
-            <input type="number" value={draft.level} onChange={(event) => setDraft({ ...draft, level: readNumber(event.target.value, 1) })} />
+            <input name="level" type="number" value={draft.level} onChange={(event) => setDraft({ ...draft, level: readNumber(event.target.value, 1) })} />
           </label>
           <label>
             КД
-            <input type="number" value={draft.armorClass} onChange={(event) => setDraft({ ...draft, armorClass: readNumber(event.target.value, 10) })} />
+            <input name="armorClass" type="number" value={draft.armorClass} onChange={(event) => setDraft({ ...draft, armorClass: readNumber(event.target.value, 10) })} />
           </label>
           <label>
             Хиты
-            <input type="number" value={draft.maxHp} onChange={(event) => setDraft({ ...draft, maxHp: readNumber(event.target.value, 1) })} />
+            <input name="maxHp" type="number" value={draft.maxHp} onChange={(event) => setDraft({ ...draft, maxHp: readNumber(event.target.value, 1) })} />
           </label>
           <label>
             Инициатива
             <input
+              name="initiativeMod"
               type="number"
               value={draft.initiativeMod}
               onChange={(event) => setDraft({ ...draft, initiativeMod: readNumber(event.target.value, 0) })}
@@ -562,16 +913,27 @@ function PlayersPanel({
           <label>
             Пасс. восприятие
             <input
+              name="passivePerception"
               type="number"
               value={draft.passivePerception}
               onChange={(event) => setDraft({ ...draft, passivePerception: readNumber(event.target.value, 10) })}
             />
           </label>
-          <label className="wide checkbox-row">
+          <label className={`wide player-active-toggle ${draft.active ? 'active' : ''}`}>
             <input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} />
-            Активен в боях
+            <span className="player-active-mark" aria-hidden="true">
+              <Swords size={17} />
+            </span>
+            <span>
+              <strong>Активен в боях</strong>
+              <small>{draft.active ? 'Персонаж добавляется в энкаунтеры и бои' : 'Персонаж хранится в кампании, но не участвует в боях'}</small>
+            </span>
           </label>
           <label className="wide">
+            Арт персонажа
+            <ImageUrlInput value={draft.imageUrl} onChange={(imageUrl) => setDraft({ ...draft, imageUrl })} placeholder="URL портрета или аватара персонажа" />
+          </label>
+          <label className="wide player-notes-field">
             Заметки
             <textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} />
           </label>
@@ -589,19 +951,22 @@ function PlayersPanel({
         </form>
       </div>
 
-      <div className="list-stack">
+      <div className="list-stack player-list-scroll">
         {detail.players.map((player) => (
-          <article className="entity-card" key={player.id}>
-            <div>
-              <h3>{player.name}</h3>
-              <p>
-                Уровень {player.level} · КД {player.armorClass} · Хиты {player.maxHp} · инициатива {signed(player.initiativeMod)}
-              </p>
-            </div>
+          <article className={`entity-card selectable player-list-card ${draft.id === player.id ? 'active' : ''} ${player.active ? '' : 'inactive-player'}`} key={player.id}>
+            <button type="button" className="player-list-main player-list-button" onClick={() => setDraft({ ...player })}>
+              {player.imageUrl ? <img className="player-list-avatar" src={player.imageUrl} alt="" /> : <span className="player-list-avatar empty">{player.name.slice(0, 1) || '?'}</span>}
+              <div>
+                <div className="player-list-name-row">
+                  <h3>{player.name}</h3>
+                  {!player.active && <span className="inactive-player-badge">Не активен в боях</span>}
+                </div>
+                <p>
+                  Уровень {player.level} · КД {player.armorClass} · Хиты {player.maxHp} · инициатива {signed(player.initiativeMod)}
+                </p>
+              </div>
+            </button>
             <div className="card-actions">
-              <button className="icon-button" type="button" onClick={() => setDraft({ ...player })} aria-label="Редактировать игрока">
-                <Save size={18} />
-              </button>
               <HoldDeleteButton label="Удалить игрока" compact disabled={busy} onConfirm={() => run(() => api.deletePlayer(player.id)).then(onRefresh)} />
             </div>
           </article>
@@ -834,6 +1199,22 @@ function CreatureEditor({
   onSave: (event: FormEvent) => Promise<void>;
   onDelete?: () => Promise<void>;
 }): JSX.Element {
+  useEffect(() => {
+    function handleWheel(event: WheelEvent): void {
+      const activeElement = document.activeElement;
+      if (!(activeElement instanceof HTMLTextAreaElement)) return;
+      if (!activeElement.closest('.stat-editor')) return;
+      if (activeElement.scrollHeight <= activeElement.clientHeight) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      activeElement.scrollTop += event.deltaY;
+    }
+
+    window.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+    return () => window.removeEventListener('wheel', handleWheel, { capture: true });
+  }, []);
+
   return (
     <div className="panel stat-editor">
       <div className="panel-title split">
@@ -845,97 +1226,339 @@ function CreatureEditor({
           <HoldDeleteButton label="Удалить статблок NPC" disabled={busy} onConfirm={onDelete} />
         )}
       </div>
-      <form className="form-grid" onSubmit={(event) => void onSave(event)}>
-        <label>
-          Имя
-          <input value={draft.name} onChange={(event) => onDraft({ ...draft, name: event.target.value })} />
-        </label>
-        <label>
-          Оригинал
-          <input value={draft.originalName} onChange={(event) => onDraft({ ...draft, originalName: event.target.value })} />
-        </label>
-        <label>
-          Размер
-          <input value={draft.size} onChange={(event) => onDraft({ ...draft, size: event.target.value })} />
-        </label>
-        <label>
-          Тип
-          <input value={draft.creatureType} onChange={(event) => onDraft({ ...draft, creatureType: event.target.value })} />
-        </label>
-        <label>
-          КД
-          <input type="number" value={draft.armorClass} onChange={(event) => onDraft({ ...draft, armorClass: readNumber(event.target.value, 10) })} />
-        </label>
-        <label>
-          Хиты
-          <input type="number" value={draft.hitPoints} onChange={(event) => onDraft({ ...draft, hitPoints: readNumber(event.target.value, 1) })} />
-        </label>
-        <label>
-          Кубы хитов
-          <input value={draft.hitDice} onChange={(event) => onDraft({ ...draft, hitDice: event.target.value })} />
-        </label>
-        <label>
-          Инициатива
-          <input
-            type="number"
-            value={draft.initiativeMod}
-            onChange={(event) => onDraft({ ...draft, initiativeMod: readNumber(event.target.value, 0) })}
-          />
-        </label>
-        <label className="wide">
-          Скорость
-          <input value={draft.speeds} onChange={(event) => onDraft({ ...draft, speeds: event.target.value })} />
-        </label>
-        <AbilityEditor abilities={draft.abilities} onChange={(abilities) => onDraft({ ...draft, abilities })} />
-        <label>
-          КО
-          <input value={draft.challengeRating} onChange={(event) => onDraft({ ...draft, challengeRating: event.target.value })} />
-        </label>
-        <label>
-          ПО
-          <input type="number" value={draft.xp} onChange={(event) => onDraft({ ...draft, xp: readNumber(event.target.value, 0) })} />
-        </label>
-        <label className="wide">
-          Навыки
-          <input value={draft.skills} onChange={(event) => onDraft({ ...draft, skills: event.target.value })} />
-        </label>
-        <label className="wide">
-          Устойчивости
-          <input value={draft.resistances} onChange={(event) => onDraft({ ...draft, resistances: event.target.value })} />
-        </label>
-        <label className="wide">
-          Невосприимчивость
-          <input value={draft.immunities} onChange={(event) => onDraft({ ...draft, immunities: event.target.value })} />
-        </label>
-        <label className="wide">
-          Изображение
-          <input value={draft.imageUrl} onChange={(event) => onDraft({ ...draft, imageUrl: event.target.value })} />
-        </label>
-        <label className="wide">
-          Токен
-          <input value={draft.tokenUrl} onChange={(event) => onDraft({ ...draft, tokenUrl: event.target.value })} />
-        </label>
-        <label className="wide">
-          Особенности
-          <textarea
-            value={featuresToText(draft.traits)}
-            onChange={(event) => onDraft({ ...draft, traits: textToFeatures(event.target.value, 'Особенности') })}
-          />
-        </label>
-        <label className="wide">
-          Действия
-          <textarea
-            value={featuresToText(draft.actions)}
-            onChange={(event) => onDraft({ ...draft, actions: textToFeatures(event.target.value, 'Действия') })}
-          />
-        </label>
-        <div className="form-actions wide">
+      <form className="stat-editor-form" onSubmit={(event) => void onSave(event)}>
+        <div className="stat-editor-sections">
+          <StatEditorSection title="Основное" description="Имя, размер и тип существа" defaultOpen>
+            <div className="form-grid">
+              <label>
+                Имя
+                <input value={draft.name} onChange={(event) => onDraft({ ...draft, name: event.target.value })} placeholder="Например: Паровой мефит" />
+              </label>
+              <label>
+                Оригинал
+                <input value={draft.originalName} onChange={(event) => onDraft({ ...draft, originalName: event.target.value })} placeholder="Например: Steam Mephit" />
+              </label>
+              <label>
+                Размер
+                <input value={draft.size} onChange={(event) => onDraft({ ...draft, size: event.target.value })} placeholder="Например: Небольшой или Средний" />
+              </label>
+              <label>
+                Тип
+                <input value={draft.creatureType} onChange={(event) => onDraft({ ...draft, creatureType: event.target.value })} placeholder="Например: Элементаль, Гуманоид, Дракон" />
+              </label>
+            </div>
+          </StatEditorSection>
+
+          <StatEditorSection title="Боевые параметры" description="КД, хиты, скорость, инициатива и опыт" defaultOpen>
+            <div className="form-grid">
+              <label>
+                КД
+                <input
+                  type="number"
+                  value={draft.armorClass}
+                  onChange={(event) => onDraft({ ...draft, armorClass: readNumber(event.target.value, 10) })}
+                  placeholder="Например: 15"
+                />
+              </label>
+              <label>
+                Хиты
+                <input
+                  type="number"
+                  value={draft.hitPoints}
+                  onChange={(event) => onDraft({ ...draft, hitPoints: readNumber(event.target.value, 1) })}
+                  placeholder="Среднее значение, например: 81"
+                />
+              </label>
+              <label>
+                Кубы хитов
+                <input value={draft.hitDice} onChange={(event) => onDraft({ ...draft, hitDice: event.target.value })} placeholder="Формула кубов: 18d8 или 23d12 + 46" />
+              </label>
+              <label>
+                Инициатива
+                <input
+                  type="number"
+                  value={draft.initiativeMod}
+                  onChange={(event) => onDraft({ ...draft, initiativeMod: readNumber(event.target.value, 0) })}
+                  placeholder="Модификатор, например: 2 или -1"
+                />
+              </label>
+              <label className="wide">
+                Скорость
+                <input
+                  value={draft.speeds}
+                  onChange={(event) => onDraft({ ...draft, speeds: event.target.value })}
+                  placeholder="Через запятую: 30 футов, полёт 60 футов, плавание 30 футов"
+                />
+              </label>
+              <label>
+                КО
+                <input
+                  value={draft.challengeRating}
+                  onChange={(event) => onDraft({ ...draft, challengeRating: event.target.value })}
+                  placeholder="Обычная дробь или число: 1/4, 3, 15"
+                />
+              </label>
+              <label>
+                ПО
+                <input
+                  type="number"
+                  value={draft.xp}
+                  onChange={(event) => onDraft({ ...draft, xp: readNumber(event.target.value, 0) })}
+                  placeholder="Опыт числом: 50, 3900, 13000"
+                />
+              </label>
+            </div>
+          </StatEditorSection>
+
+          <StatEditorSection title="Характеристики" description="СИЛ, ЛВК, ВЫН, ИНТ, МДР и ХАР" defaultOpen={false}>
+            <AbilityEditor abilities={draft.abilities} onChange={(abilities) => onDraft({ ...draft, abilities })} />
+          </StatEditorSection>
+
+          <StatEditorSection title="Навыки и защиты" description="Навыки, устойчивости и невосприимчивости" defaultOpen={false}>
+            <div className="form-grid">
+              <label className="wide">
+                Навыки
+                <input
+                  value={draft.skills}
+                  onChange={(event) => onDraft({ ...draft, skills: event.target.value })}
+                  placeholder="Через запятую: Внимание +4, Скрытность +8"
+                />
+              </label>
+              <label className="wide">
+                Устойчивости
+                <input
+                  value={draft.resistances}
+                  onChange={(event) => onDraft({ ...draft, resistances: event.target.value })}
+                  placeholder="Через запятую: Огонь, Холод; дробящий от немагических атак"
+                />
+              </label>
+              <label className="wide">
+                Невосприимчивость
+                <input
+                  value={draft.immunities}
+                  onChange={(event) => onDraft({ ...draft, immunities: event.target.value })}
+                  placeholder="Через запятую: Огонь, Яд; состояние Отравленный"
+                />
+              </label>
+            </div>
+          </StatEditorSection>
+
+          <StatEditorSection title="Медиа" description="Изображение и токен для экранов боя" defaultOpen={false}>
+            <div className="form-grid">
+              <label className="wide">
+                Изображение
+                <ImageUrlInput value={draft.imageUrl} onChange={(imageUrl) => onDraft({ ...draft, imageUrl })} placeholder="URL портрета существа" />
+              </label>
+              <label className="wide">
+                Токен
+                <ImageUrlInput value={draft.tokenUrl} onChange={(tokenUrl) => onDraft({ ...draft, tokenUrl })} placeholder="URL круглого токена, если он есть" />
+              </label>
+            </div>
+          </StatEditorSection>
+
+          <StatEditorSection title="Особенности" description="Пассивные свойства, заклинания и правила существа" defaultOpen={false}>
+            <FeatureListEditor
+              section="Особенности"
+              addLabel="Добавить особенность"
+              emptyLabel="Особенности пока не добавлены"
+              features={draft.traits}
+              onChange={(traits) => onDraft({ ...draft, traits })}
+            />
+          </StatEditorSection>
+
+          <StatEditorSection title="Действия" description="Атаки, реакции и активные возможности" defaultOpen={false}>
+            <FeatureListEditor
+              section="Действия"
+              addLabel="Добавить действие"
+              emptyLabel="Действия пока не добавлены"
+              features={draft.actions}
+              onChange={(actions) => onDraft({ ...draft, actions })}
+            />
+          </StatEditorSection>
+        </div>
+
+        <div className="form-actions stat-editor-actions">
           <button className="button primary" type="submit" disabled={busy}>
             <Save size={19} />
             Сохранить
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function StatEditorSection({
+  title,
+  description,
+  defaultOpen,
+  children
+}: {
+  title: string;
+  description: string;
+  defaultOpen: boolean;
+  children: ReactNode;
+}): JSX.Element {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <details className="stat-editor-section" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className="stat-editor-section-summary">
+        <span>
+          <strong>{title}</strong>
+          <small>{description}</small>
+        </span>
+        <ChevronDown size={20} />
+      </summary>
+      <div className="stat-editor-section-body">{children}</div>
+    </details>
+  );
+}
+
+function ImageUrlInput({
+  value,
+  onChange,
+  placeholder
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}): JSX.Element {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  async function loadLocalImage(file: File | undefined): Promise<void> {
+    if (!file) return;
+    onChange(await readFileAsDataUrl(file));
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  return (
+    <div className="local-image-field">
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+      <input
+        ref={fileInputRef}
+        className="visually-hidden"
+        type="file"
+        accept="image/*"
+        onChange={(event) => void loadLocalImage(event.target.files?.[0])}
+      />
+      <button className="button secondary" type="button" onClick={() => fileInputRef.current?.click()}>
+        <UploadCloud size={18} />
+        Загрузить
+      </button>
+    </div>
+  );
+}
+
+function FeatureListEditor({
+  features,
+  section,
+  addLabel,
+  emptyLabel,
+  defaultName,
+  onChange
+}: {
+  features: CreatureFeature[];
+  section: string;
+  addLabel: string;
+  emptyLabel: string;
+  defaultName?: string;
+  onChange: (features: CreatureFeature[]) => void;
+}): JSX.Element {
+  const nextDefaultName = defaultName ?? (section === 'Действия' ? 'Новое действие' : 'Новая особенность');
+
+  function updateFeature(index: number, patch: Partial<Pick<CreatureFeature, 'name' | 'description'>>): void {
+    onChange(
+      features.map((feature, featureIndex) =>
+        featureIndex === index
+          ? {
+              ...feature,
+              ...patch,
+              section,
+              html: patch.name !== undefined || patch.description !== undefined ? '' : feature.html
+            }
+          : feature
+      )
+    );
+  }
+
+  function moveFeature(index: number, direction: -1 | 1): void {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= features.length) return;
+
+    const nextFeatures = [...features];
+    const [feature] = nextFeatures.splice(index, 1);
+    nextFeatures.splice(nextIndex, 0, feature);
+    onChange(nextFeatures);
+  }
+
+  function removeFeature(index: number): void {
+    onChange(features.filter((_, featureIndex) => featureIndex !== index));
+  }
+
+  function addFeature(): void {
+    onChange([
+      ...features,
+      {
+        id: `${section}-${clientId()}`.replace(/\s+/g, '-').toLocaleLowerCase('ru'),
+        name: nextDefaultName,
+        section,
+        description: '',
+        html: ''
+      }
+    ]);
+  }
+
+  return (
+    <div className="feature-editor">
+      <div className="feature-editor-list">
+        {features.length ? (
+          features.map((feature, index) => (
+            <article className="feature-editor-card" key={feature.id || `${section}-${index}`}>
+              <div className="feature-editor-card-header">
+                <strong>{index + 1}</strong>
+                <div className="feature-editor-tools">
+                  <button className="icon-button feature-editor-button" type="button" disabled={index === 0} onClick={() => moveFeature(index, -1)} aria-label="Поднять выше">
+                    <ArrowUp size={17} />
+                  </button>
+                  <button
+                    className="icon-button feature-editor-button"
+                    type="button"
+                    disabled={index === features.length - 1}
+                    onClick={() => moveFeature(index, 1)}
+                    aria-label="Опустить ниже"
+                  >
+                    <ArrowDown size={17} />
+                  </button>
+                  <button className="icon-button danger feature-editor-button" type="button" onClick={() => removeFeature(index)} aria-label="Удалить элемент">
+                    <Trash2 size={17} />
+                  </button>
+                </div>
+              </div>
+              <div className="feature-editor-fields">
+                <label>
+                  Название
+                  <input value={feature.name} onChange={(event) => updateFeature(index, { name: event.target.value })} placeholder={nextDefaultName} />
+                </label>
+                <label>
+                  Описание
+                  <textarea
+                    value={feature.description}
+                    onChange={(event) => updateFeature(index, { description: event.target.value })}
+                    placeholder="Описание способности"
+                  />
+                </label>
+              </div>
+            </article>
+          ))
+        ) : (
+          <div className="feature-editor-empty">{emptyLabel}</div>
+        )}
+      </div>
+      <button className="button secondary feature-editor-add" type="button" onClick={addFeature}>
+        <Plus size={18} />
+        {addLabel}
+      </button>
     </div>
   );
 }
@@ -1079,12 +1702,17 @@ function EncounterBuilder({
   const [initiativeMode, setInitiativeMode] = useState<InitiativeMode>('individual');
   const [hpMode, setHpMode] = useState<HitPointMode>('average');
   const [hpOverride, setHpOverride] = useState('');
+  const [isAlly, setIsAlly] = useState(false);
   const [addLairWithCreature, setAddLairWithCreature] = useState(false);
   const templateById = useMemo(() => new Map(creatures.map((creature) => [creature.id, creature])), [creatures]);
   const selectedTemplate = templateById.get(templateId);
   const playerSettingById = useMemo(() => new Map(encounter.playerSettings.map((setting) => [setting.playerId, setting])), [encounter.playerSettings]);
   const canAddGroup = Boolean(templateId && (hpMode !== 'fixed' || hpOverride.trim()));
   const canAddLairFromTemplate = Boolean(selectedTemplate?.lairDescription || selectedTemplate?.lairHtml || selectedTemplate?.lairName);
+  const difficulty = useMemo(
+    () => calculateEncounterDifficulty(players, encounter.playerSettings, encounter.groups, creatures),
+    [creatures, encounter.groups, encounter.playerSettings, players]
+  );
   const creatureOptions = useMemo<SelectOption[]>(
     () =>
       creatures.map((creature) => ({
@@ -1128,15 +1756,19 @@ function EncounterBuilder({
         quantity,
         initiativeMode,
         hpMode,
-        hpOverride: hpMode === 'fixed' && hpOverride.trim() ? readNumber(hpOverride, 1) : null
+        hpOverride: hpMode === 'fixed' && hpOverride.trim() ? readNumber(hpOverride, 1) : null,
+        isAlly
       })
     );
     if (addLairWithCreature && selected && !encounter.lair) {
       await run(() => saveLairFromTemplate(encounter.id, selected));
     }
+    setTemplateId('');
+    setTemplateSearch('');
     setQuantity(1);
     setHpMode('average');
     setHpOverride('');
+    setIsAlly(false);
     setAddLairWithCreature(false);
     await onRefresh();
   }
@@ -1164,19 +1796,23 @@ function EncounterBuilder({
     await onRefresh();
   }
 
-  async function saveGroupInitiative(group: EncounterCreatureGroup, patch: Partial<Pick<EncounterCreatureGroup, 'initiativeAdvantage' | 'initiativeOverride'>>): Promise<void> {
+  async function saveGroupInitiative(
+    group: EncounterCreatureGroup,
+    patch: Partial<Pick<EncounterCreatureGroup, 'quantity' | 'initiativeAdvantage' | 'initiativeOverride' | 'isAlly'>>
+  ): Promise<void> {
     await run(() =>
       api.saveEncounterGroup({
         id: group.id,
         encounterId: group.encounterId,
         templateId: group.templateId,
         displayName: group.displayName,
-        quantity: group.quantity,
+        quantity: patch.quantity ?? group.quantity,
         initiativeMode: group.initiativeMode,
         initiativeAdvantage: patch.initiativeAdvantage ?? group.initiativeAdvantage,
         initiativeOverride: patch.initiativeOverride === undefined ? group.initiativeOverride : patch.initiativeOverride,
         hpMode: group.hpMode,
-        hpOverride: group.hpOverride
+        hpOverride: group.hpOverride,
+        isAlly: patch.isAlly ?? group.isAlly
       })
     );
     await onRefresh();
@@ -1214,6 +1850,7 @@ function EncounterBuilder({
           </button>
         </div>
       </div>
+      <EncounterDifficultyScale result={difficulty} />
       <form className="form-grid" onSubmit={(event) => void addGroup(event)}>
         <label className="wide">
           NPC
@@ -1267,6 +1904,16 @@ function EncounterBuilder({
             placeholder="Выберите режим инициативы"
             ariaLabel="Выбрать режим инициативы"
           />
+        </label>
+        <label className={`wide ally-toggle-row ${isAlly ? 'active' : ''}`}>
+          <input type="checkbox" checked={isAlly} onChange={(event) => setIsAlly(event.target.checked)} />
+          <span className="ally-toggle-mark" aria-hidden="true">
+            <Shield size={18} />
+          </span>
+          <span>
+            <strong>Союзник</strong>
+            <small>Существо сражается на стороне игроков и не учитывается при начислении опыта</small>
+          </span>
         </label>
         {canAddLairFromTemplate && !encounter.lair && (
           <label className={`wide lair-checkbox-row ${addLairWithCreature ? 'active' : ''}`}>
@@ -1344,18 +1991,7 @@ function EncounterBuilder({
               <span>Логово</span>
               <strong>1</strong>
             </div>
-            <article className="entity-card lair-roster-card">
-              <div>
-                <h3>{encounter.lair.name}</h3>
-                <p>Инициатива 20{encounter.lair.description ? ` · ${truncateText(encounter.lair.description, 140)}` : ''}</p>
-              </div>
-              <HoldDeleteButton
-                label="логово"
-                iconOnly
-                disabled={busy}
-                onConfirm={() => run(() => api.deleteEncounterLair(encounter.id)).then(onRefresh)}
-              />
-            </article>
+            <EncounterLairEditor lair={encounter.lair} busy={busy} run={run} onRefresh={onRefresh} />
           </section>
         )}
 
@@ -1368,14 +2004,31 @@ function EncounterBuilder({
         {encounter.groups.map((group) => {
           const template = templateById.get(group.templateId);
           return (
-            <article className="entity-card" key={group.id}>
+            <article className={`entity-card encounter-npc-card ${group.isAlly ? 'ally' : ''}`} key={group.id}>
               <div>
-                <h3>{group.displayName}</h3>
+                <div className="encounter-npc-name-row">
+                  <h3>{group.displayName}</h3>
+                  {group.isAlly && <span className="ally-badge"><Shield size={14} />Союзник</span>}
+                </div>
                 <p>
                   {group.quantity} шт. · {describeInitiativeMode(group.initiativeMode)} · Хиты {describeHitPointMode(group, template)}
                 </p>
               </div>
               <div className="roster-card-actions">
+                <EncounterQuantityControl
+                  quantity={group.quantity}
+                  busy={busy}
+                  onSave={(quantity) => void saveGroupInitiative(group, { quantity })}
+                />
+                <label className={`participation-toggle ally-card-toggle ${group.isAlly ? 'active' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={group.isAlly}
+                    disabled={busy}
+                    onChange={(event) => void saveGroupInitiative(group, { isAlly: event.target.checked })}
+                  />
+                  <span>Союзник</span>
+                </label>
                 <InitiativeSettingControls
                   advantage={group.initiativeAdvantage}
                   override={group.initiativeOverride}
@@ -1398,6 +2051,262 @@ function EncounterBuilder({
         </section>
       </div>
     </>
+  );
+}
+
+function EncounterDifficultyScale({ result }: { result: EncounterDifficultyResult }): JSX.Element {
+  if (!result.ok) {
+    return (
+      <section className="encounter-difficulty-panel unavailable">
+        <div className="encounter-difficulty-heading">
+          <div>
+            <span className="eyebrow">Оценка сложности</span>
+            <h3>Недостаточно данных</h3>
+          </div>
+          <Info size={20} />
+        </div>
+        <p>{result.message}</p>
+        {result.hasAllies && <EncounterAllyDifficultyWarning />}
+      </section>
+    );
+  }
+
+  const [low, medium, high] = result.budgets;
+  const scaleMaximum = Math.max(1, Math.ceil(high.xp * 1.25));
+  const markerPosition = Math.min(100, (result.enemyXp / scaleMaximum) * 100);
+  const columns = [low.xp, medium.xp - low.xp, high.xp - medium.xp, scaleMaximum - high.xp]
+    .map((value) => `${Math.max(1, value)}fr`)
+    .join(' ');
+
+  return (
+    <section className={`encounter-difficulty-panel ${result.difficulty}`}>
+      <div className="encounter-difficulty-heading">
+        <div>
+          <span className="eyebrow">Оценка сложности</span>
+          <h3>{result.difficultyLabel}</h3>
+        </div>
+        <span className={`difficulty-result-badge ${result.difficulty}`}>{result.enemyXp.toLocaleString('ru-RU')} XP врагов</span>
+      </div>
+
+      <div className="encounter-difficulty-party">
+        <span>{result.partySize} игроков</span>
+        <span>Средний уровень {result.averageLevel}</span>
+        <span>{result.levelSummary}</span>
+        <span className="inline-help" title="Расчёт использует прямой бюджет XP и не применяет множители количества монстров.">
+          <Info size={15} />
+        </span>
+      </div>
+
+      <div className="difficulty-scale-wrap">
+        <div className="difficulty-scale" style={{ gridTemplateColumns: columns }}>
+          <span className="below" title="Ниже бюджета низкой сложности">Ниже</span>
+          <span className="low" title={low.description}>Низкая</span>
+          <span className="medium" title={medium.description}>Средняя</span>
+          <span className="high" title={high.description}>Высокая+</span>
+        </div>
+        <span className="difficulty-scale-marker" style={{ left: `${markerPosition}%` }} title={`Текущая сцена: ${result.enemyXp.toLocaleString('ru-RU')} XP`}>
+          <span />
+        </span>
+      </div>
+
+      <div className="difficulty-budget-grid">
+        {result.budgets.map((budget) => (
+          <div className={`difficulty-budget-card ${budget.key}`} key={budget.key} title={budget.description}>
+            <span>{budget.label}</span>
+            <strong>{budget.xp.toLocaleString('ru-RU')} XP</strong>
+            <Info size={15} />
+          </div>
+        ))}
+      </div>
+
+      {result.hasAllies && <EncounterAllyDifficultyWarning />}
+      {result.missingXpGroups > 0 && (
+        <div className="difficulty-warning missing-xp">
+          <Info size={18} />
+          <span>У {result.missingXpGroups} вражеских групп не найден XP или распознаваемый КО. Они не вошли в расчёт.</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function EncounterAllyDifficultyWarning(): JSX.Element {
+  return (
+    <div className="difficulty-warning allies">
+      <Info size={18} />
+      <span>В сцене есть союзники. Калькулятор может работать неточно, поскольку их влияние на бой невозможно оценить только по XP.</span>
+    </div>
+  );
+}
+
+function EncounterLairEditor({
+  lair,
+  busy,
+  run,
+  onRefresh
+}: {
+  lair: EncounterLair;
+  busy: boolean;
+  run: <T>(work: () => Promise<T>) => Promise<T | undefined>;
+  onRefresh: () => Promise<void>;
+}): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(() => ({
+    name: lair.name,
+    description: lair.description,
+    effects: lair.effects
+  }));
+
+  useEffect(() => {
+    setDraft({
+      name: lair.name,
+      description: lair.description,
+      effects: lair.effects
+    });
+    setEditing(false);
+  }, [lair.id, lair.name, lair.description, lair.effects]);
+
+  async function save(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    await run(() =>
+      api.saveEncounterLair({
+        encounterId: lair.encounterId,
+        templateId: lair.templateId,
+        name: draft.name,
+        description: draft.description,
+        html: lair.html,
+        effects: draft.effects
+      })
+    );
+    await onRefresh();
+    setEditing(false);
+  }
+
+  function resetDraft(): void {
+    setDraft({
+      name: lair.name,
+      description: lair.description,
+      effects: lair.effects
+    });
+  }
+
+  return (
+    <article className="entity-card lair-roster-card lair-editor-card">
+      <div className="lair-editor-header">
+        <div>
+          <h3>{lair.name}</h3>
+          <p>Инициатива 20 · эффектов {lair.effects.length}</p>
+        </div>
+        <div className="lair-editor-actions">
+          <button className={`icon-button ${editing ? 'active' : ''}`} type="button" disabled={busy} onClick={() => setEditing((current) => !current)} aria-label={editing ? 'Закрыть редактирование логова' : 'Редактировать логово'}>
+            {editing ? <X size={18} /> : <Edit3 size={18} />}
+          </button>
+          <HoldDeleteButton
+            label="логово"
+            iconOnly
+            disabled={busy}
+            onConfirm={() => run(() => api.deleteEncounterLair(lair.encounterId)).then(onRefresh)}
+          />
+        </div>
+      </div>
+
+      {editing && (
+        <form className="lair-editor-form" onSubmit={(event) => void save(event)}>
+          <div className="form-grid">
+            <label>
+              Название логова
+              <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Логово" />
+            </label>
+            <label>
+              Инициатива
+              <input value="20" disabled readOnly />
+            </label>
+            <label className="wide">
+              Описание
+              <textarea
+                value={draft.description}
+                onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+                placeholder="Общее описание логова или правило, которое будет видно в статблоке логова"
+              />
+            </label>
+          </div>
+
+          <StatEditorSection title="Эффекты логова" description="Удаляйте лишние эффекты, меняйте порядок и добавляйте свои" defaultOpen>
+            <FeatureListEditor
+              section="Эффекты логова"
+              addLabel="Добавить эффект логова"
+              emptyLabel="Эффекты логова пока не добавлены"
+              defaultName="Новый эффект логова"
+              features={draft.effects}
+              onChange={(effects) => setDraft({ ...draft, effects })}
+            />
+          </StatEditorSection>
+
+          <div className="form-actions">
+            <button className="button primary" type="submit" disabled={busy}>
+              <Save size={19} />
+              Сохранить логово
+            </button>
+            <button className="button secondary" type="button" disabled={busy} onClick={resetDraft}>
+              Сброс
+            </button>
+          </div>
+        </form>
+      )}
+    </article>
+  );
+}
+
+function EncounterQuantityControl({ quantity, busy, onSave }: { quantity: number; busy: boolean; onSave: (quantity: number) => void }): JSX.Element {
+  const [draft, setDraft] = useState(String(quantity));
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => setDraft(String(quantity)), [quantity]);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return undefined;
+
+    function handleWheel(event: WheelEvent): void {
+      if (document.activeElement !== input) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setDraft((current) => String(Math.max(1, Math.min(99, readNumber(current, quantity) + (event.deltaY < 0 ? 1 : -1)))));
+    }
+
+    window.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+    return () => window.removeEventListener('wheel', handleWheel, { capture: true });
+  }, [quantity]);
+
+  function saveQuantity(): void {
+    const next = Math.max(1, Math.min(99, Math.round(readNumber(draft, quantity))));
+    setDraft(String(next));
+    if (next !== quantity) onSave(next);
+  }
+
+  return (
+    <label className="encounter-quantity-control">
+      <span>Количество</span>
+      <input
+        ref={inputRef}
+        value={draft}
+        disabled={busy}
+        inputMode="numeric"
+        aria-label="Количество существ в группе"
+        title="Введите от 1 до 99. Enter сохраняет значение."
+        onChange={(event) => setDraft(event.target.value.replace(/[^\d]/g, ''))}
+        onBlur={saveQuantity}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+          if (event.key === 'Escape') {
+            setDraft(String(quantity));
+          }
+        }}
+      />
+    </label>
   );
 }
 
@@ -1503,7 +2412,12 @@ function CombatPanel({
   const [defeatedGiveXp, setDefeatedGiveXp] = useState(true);
   const [escapedXpMode, setEscapedXpMode] = useState<CompleteCombatOptions['escapedXpMode']>('none');
   const [customXpPool, setCustomXpPool] = useState('');
+  const [xpAdjustment, setXpAdjustment] = useState('');
+  const [shareXpWithAllies, setShareXpWithAllies] = useState(false);
+  const [xpAllyIds, setXpAllyIds] = useState<string[]>([]);
+  const [allyXpModalOpen, setAllyXpModalOpen] = useState(false);
   const ordered = session?.combatants.slice().sort((a, b) => a.turnOrder - b.turnOrder) ?? [];
+  const xpAllies = ordered.filter((combatant) => combatant.side === 'npc' && combatant.isAlly);
   const currentTurnIndex = Math.max(
     0,
     ordered.findIndex((combatant) => combatant.id === session?.activeCombatantId)
@@ -1514,7 +2428,10 @@ function CombatPanel({
   const xpOptions: CompleteCombatOptions = {
     defeatedGiveXp,
     escapedXpMode,
-    customXpPool: customXpPool.trim() ? readNumber(customXpPool, 0) : undefined
+    customXpPool: customXpPool.trim() ? readNumber(customXpPool, 0) : undefined,
+    xpAdjustment: xpAdjustment.trim() ? readSignedNumber(xpAdjustment) : undefined,
+    shareXpWithAllies,
+    xpAllyIds
   };
   const xpPreview = session
     ? calculateExperience(
@@ -1547,12 +2464,19 @@ function CombatPanel({
     const options: CompleteCombatOptions = {
       defeatedGiveXp,
       escapedXpMode,
-      customXpPool: customXpPool.trim() ? readNumber(customXpPool, 0) : undefined
+      customXpPool: customXpPool.trim() ? readNumber(customXpPool, 0) : undefined,
+      xpAdjustment: xpAdjustment.trim() ? readSignedNumber(xpAdjustment) : undefined,
+      shareXpWithAllies,
+      xpAllyIds
     };
     const result = await run(() => api.completeCombat(session.id, options));
     if (result) {
       setFinishOpen(false);
       setCustomXpPool('');
+      setXpAdjustment('');
+      setShareXpWithAllies(false);
+      setXpAllyIds([]);
+      setAllyXpModalOpen(false);
       onComplete(result);
     }
   }
@@ -1690,6 +2614,21 @@ function CombatPanel({
           <strong>{activeCombatant.name}</strong>
         </div>
       )}
+      <div className="combat-hotkeys" aria-label="Горячие клавиши боя">
+        <Keyboard size={18} />
+        <span>
+          <kbd>←</kbd> ход назад
+        </span>
+        <span>
+          <kbd>→</kbd> следующий ход
+        </span>
+        <span>
+          <kbd>Shift</kbd> + <kbd>←</kbd>/<kbd>→</kbd> раунд назад/вперёд
+        </span>
+        <span>
+          <kbd>Enter</kbd> применить +/- хиты
+        </span>
+      </div>
 
       {finishOpen && xpPreview && (
         <FinishCombatModal
@@ -1697,12 +2636,40 @@ function CombatPanel({
           defeatedGiveXp={defeatedGiveXp}
           escapedXpMode={escapedXpMode}
           customXpPool={customXpPool}
+          xpAdjustment={xpAdjustment}
+          shareXpWithAllies={shareXpWithAllies}
+          allyCount={xpAllies.length}
+          selectedAllyCount={xpAllyIds.length}
           preview={xpPreview}
           onDefeatedGiveXpChange={setDefeatedGiveXp}
           onEscapedXpModeChange={setEscapedXpMode}
           onCustomXpPoolChange={setCustomXpPool}
+          onXpAdjustmentChange={setXpAdjustment}
+          onShareXpWithAlliesChange={(value) => {
+            if (!value) {
+              setShareXpWithAllies(false);
+              setXpAllyIds([]);
+              return;
+            }
+            if (!xpAllies.length) return;
+            setShareXpWithAllies(true);
+            setXpAllyIds((current) => (current.length ? current : xpAllies.map((ally) => ally.id)));
+            setAllyXpModalOpen(true);
+          }}
+          onConfigureAllies={() => setAllyXpModalOpen(true)}
           onCancel={() => setFinishOpen(false)}
           onApply={() => void completeCurrentCombat()}
+        />
+      )}
+      {finishOpen && allyXpModalOpen && (
+        <AllyXpSelectionModal
+          allies={xpAllies}
+          selectedIds={xpAllyIds}
+          onSelectedIdsChange={setXpAllyIds}
+          onClose={() => {
+            setShareXpWithAllies(xpAllyIds.length > 0);
+            setAllyXpModalOpen(false);
+          }}
         />
       )}
 
@@ -1723,6 +2690,7 @@ function CombatPanel({
             onDefeated={(defeated) => void update(combatant, { defeated })}
             onEscaped={(escaped) => void update(combatant, { escaped })}
             onEffects={(effects) => void update(combatant, { effects })}
+            onPublicNameVisible={(publicNameVisible) => void update(combatant, { publicNameVisible })}
             onStats={(patch) => void update(combatant, patch)}
           />
         ))}
@@ -1736,10 +2704,17 @@ function FinishCombatModal({
   defeatedGiveXp,
   escapedXpMode,
   customXpPool,
+  xpAdjustment,
+  shareXpWithAllies,
+  allyCount,
+  selectedAllyCount,
   preview,
   onDefeatedGiveXpChange,
   onEscapedXpModeChange,
   onCustomXpPoolChange,
+  onXpAdjustmentChange,
+  onShareXpWithAlliesChange,
+  onConfigureAllies,
   onCancel,
   onApply
 }: {
@@ -1747,10 +2722,17 @@ function FinishCombatModal({
   defeatedGiveXp: boolean;
   escapedXpMode: CompleteCombatOptions['escapedXpMode'];
   customXpPool: string;
+  xpAdjustment: string;
+  shareXpWithAllies: boolean;
+  allyCount: number;
+  selectedAllyCount: number;
   preview: CombatXpAward;
   onDefeatedGiveXpChange: (value: boolean) => void;
   onEscapedXpModeChange: (value: CompleteCombatOptions['escapedXpMode']) => void;
   onCustomXpPoolChange: (value: string) => void;
+  onXpAdjustmentChange: (value: string) => void;
+  onShareXpWithAlliesChange: (value: boolean) => void;
+  onConfigureAllies: () => void;
   onCancel: () => void;
   onApply: () => void;
 }): JSX.Element {
@@ -1796,6 +2778,28 @@ function FinishCombatModal({
             ))}
           </div>
 
+          <div className="xp-allies-setting">
+            <label className={`choice-row ${shareXpWithAllies ? 'active' : ''} ${allyCount === 0 ? 'disabled' : ''}`}>
+              <input
+                type="checkbox"
+                checked={shareXpWithAllies}
+                disabled={allyCount === 0}
+                onChange={(event) => onShareXpWithAlliesChange(event.target.checked)}
+              />
+              <span className="choice-mark" aria-hidden="true" />
+              <span className="choice-copy">
+                <strong>Разделить опыт с союзниками</strong>
+                <small>{allyCount ? `Выбрано ${selectedAllyCount} из ${allyCount}` : 'В этом бою нет союзных существ'}</small>
+              </span>
+            </label>
+            {shareXpWithAllies && (
+              <button className="button secondary" type="button" onClick={onConfigureAllies}>
+                <Users size={18} />
+                Выбрать союзников
+              </button>
+            )}
+          </div>
+
           <label className="xp-pool-field">
             Кастомный пул опыта
             <input
@@ -1805,12 +2809,25 @@ function FinishCombatModal({
               placeholder="Автоматический расчёт"
             />
           </label>
+
+          <label className="xp-pool-field">
+            Бонус/штраф к опыту
+            <input
+              inputMode="text"
+              value={xpAdjustment}
+              onChange={(event) => onXpAdjustmentChange(normalizeSignedInput(event.target.value))}
+              placeholder="+0"
+            />
+          </label>
         </div>
 
         <div className="xp-preview">
           <Stat icon={<Skull size={18} />} label="Побеждено" value={preview.defeatedNpcCount} />
           <Stat icon={<ChevronRight size={18} />} label="Сбежало" value={preview.escapedNpcCount} />
           <Stat icon={<Users size={18} />} label="Игроков" value={preview.playerCount} />
+          {preview.allyRecipientCount > 0 && <Stat icon={<Shield size={18} />} label="Союзников" value={preview.allyRecipientCount} />}
+          <Stat icon={<Users size={18} />} label="Получателей" value={preview.recipientCount} />
+          <Stat icon={<Plus size={18} />} label="Бонус/штраф" value={signed(preview.xpAdjustment)} />
           <Stat icon={<Dices size={18} />} label="Всего ПО" value={preview.totalXp} />
           <strong>По {preview.xpPerPlayer} ПО каждому участнику боя</strong>
         </div>
@@ -1823,6 +2840,78 @@ function FinishCombatModal({
             <Skull size={19} />
             Применить
           </button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function AllyXpSelectionModal({
+  allies,
+  selectedIds,
+  onSelectedIdsChange,
+  onClose
+}: {
+  allies: Combatant[];
+  selectedIds: string[];
+  onSelectedIdsChange: (ids: string[]) => void;
+  onClose: () => void;
+}): JSX.Element {
+  const selected = new Set(selectedIds);
+
+  return createPortal(
+    <div className="modal-backdrop ally-xp-backdrop" role="presentation">
+      <section className="app-modal ally-xp-modal" role="dialog" aria-modal="true" aria-labelledby="ally-xp-title">
+        <header className="modal-header">
+          <div>
+            <p className="eyebrow">Получатели опыта</p>
+            <h2 id="ally-xp-title">Союзники</h2>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Закрыть">
+            <X size={20} />
+          </button>
+        </header>
+
+        <div className="ally-xp-toolbar">
+          <span>Выбрано {selectedIds.length} из {allies.length}</span>
+          <div>
+            <button className="button secondary" type="button" onClick={() => onSelectedIdsChange(allies.map((ally) => ally.id))}>
+              Выбрать всех
+            </button>
+            <button className="button secondary" type="button" onClick={() => onSelectedIdsChange([])}>
+              Снять выбор
+            </button>
+          </div>
+        </div>
+
+        <div className="ally-xp-list">
+          {allies.map((ally) => {
+            const checked = selected.has(ally.id);
+            const snapshot = ally.snapshot && 'tokenUrl' in ally.snapshot ? ally.snapshot : null;
+            const tokenUrl = snapshot ? snapshot.tokenUrl || snapshot.imageUrl : '';
+            return (
+              <label className={`ally-xp-row ${checked ? 'active' : ''}`} key={ally.id}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(event) =>
+                    onSelectedIdsChange(event.target.checked ? [...selectedIds, ally.id] : selectedIds.filter((id) => id !== ally.id))
+                  }
+                />
+                {tokenUrl ? <img src={tokenUrl} alt="" /> : <span className="ally-xp-avatar"><Shield size={22} /></span>}
+                <span className="ally-xp-copy">
+                  <strong>{ally.name}</strong>
+                  <small>{ally.defeated ? 'Побеждён' : ally.escaped ? 'Сбежал' : `Инициатива ${ally.initiative}`}</small>
+                </span>
+                <span className="choice-mark" aria-hidden="true" />
+              </label>
+            );
+          })}
+        </div>
+
+        <div className="modal-actions">
+          <button className="button primary" type="button" onClick={onClose}>Готово</button>
         </div>
       </section>
     </div>,
@@ -1852,8 +2941,11 @@ function XpAwardModal({ award, onClose, publicView = false }: { award: CombatXpA
         <div className="xp-award-grid">
           <Stat icon={<Dices size={18} />} label="Общий пул" value={award.totalXp} />
           <Stat icon={<Users size={18} />} label="Игроков" value={award.playerCount} />
+          {award.allyRecipientCount > 0 && <Stat icon={<Shield size={18} />} label="Союзников" value={award.allyRecipientCount} />}
+          <Stat icon={<Users size={18} />} label="Получателей" value={award.recipientCount} />
           <Stat icon={<Skull size={18} />} label="Побеждено" value={award.defeatedNpcCount} />
           <Stat icon={<ChevronRight size={18} />} label="Сбежало" value={award.escapedNpcCount} />
+          {award.xpAdjustment !== 0 && <Stat icon={<Plus size={18} />} label="Бонус/штраф" value={signed(award.xpAdjustment)} />}
         </div>
       </section>
     </div>,
@@ -1941,12 +3033,6 @@ function saveLairFromTemplate(encounterId: string, template: CreatureTemplate): 
     html: template.lairHtml,
     effects: template.lairEffects
   });
-}
-
-function truncateText(value: string, maxLength: number): string {
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
 }
 
 function CustomSelect({
@@ -2281,6 +3367,7 @@ function CombatantCard({
   onDefeated,
   onEscaped,
   onEffects,
+  onPublicNameVisible,
   onStats
 }: {
   combatant: Combatant;
@@ -2296,6 +3383,7 @@ function CombatantCard({
   onDefeated: (defeated: boolean) => void;
   onEscaped: (escaped: boolean) => void;
   onEffects: (effects: CombatEffect[]) => void;
+  onPublicNameVisible: (publicNameVisible: boolean) => void;
   onStats: (patch: Pick<CombatantPatch, 'armorClass' | 'maxHp' | 'currentHp' | 'temporaryHp'>) => void;
 }): JSX.Element {
   const [effectName, setEffectName] = useState('');
@@ -2315,6 +3403,7 @@ function CombatantCard({
   const baseArmorClass = getCombatantBaseArmorClass(combatant);
   const baseMaxHp = getCombatantBaseMaxHp(combatant);
   const concentrationTooltip = concentrating ? 'Прекратить концентрацию' : 'Включить концентрацию';
+  const publicNameTooltip = combatant.publicNameVisible ? 'Скрыть имя на экране игроков' : 'Показать имя на экране игроков';
 
   function addCustomEffect(): void {
     if (!effectName.trim()) return;
@@ -2431,7 +3520,7 @@ function CombatantCard({
 
   return (
     <article
-      className={`combat-card ${active ? 'active' : ''} ${bloodied ? 'bloodied' : ''} ${concentrating ? 'concentrating' : ''} ${combatant.defeated ? 'defeated' : ''} ${combatant.escaped ? 'escaped' : ''}`}
+      className={`combat-card ${active ? 'active' : ''} ${combatant.isAlly ? 'ally' : ''} ${bloodied ? 'bloodied' : ''} ${concentrating ? 'concentrating' : ''} ${combatant.defeated ? 'defeated' : ''} ${combatant.escaped ? 'escaped' : ''}`}
       draggable
       onDragStart={onDragStart}
       onDragOver={(event) => event.preventDefault()}
@@ -2447,7 +3536,7 @@ function CombatantCard({
           onClick={toggleConcentration}
           title={concentrationTooltip}
         >
-          <img src="/statuses/concentrating.svg" alt="" />
+          <img src="./statuses/concentrating.svg" alt="" />
         </button>
       )}
       {!isLairCombatant && combatant.defeated && (
@@ -2467,7 +3556,23 @@ function CombatantCard({
       <div className="combat-main">
         <div className="combat-heading">
           <div>
-            <h3>{combatant.name}</h3>
+            <div className="combat-name-row">
+              <h3>{combatant.name}</h3>
+              {combatant.side === 'npc' && (
+                <button
+                  className={`name-visibility-button ${combatant.publicNameVisible ? 'active' : ''}`}
+                  type="button"
+                  aria-label={publicNameTooltip}
+                  aria-pressed={combatant.publicNameVisible}
+                  disabled={busy}
+                  title={publicNameTooltip}
+                  onClick={() => onPublicNameVisible(!combatant.publicNameVisible)}
+                >
+                  {combatant.publicNameVisible ? <Eye size={18} /> : <EyeOff size={18} />}
+                  <span>{combatant.publicNameVisible ? 'Имя открыто' : 'Имя скрыто'}</span>
+                </button>
+              )}
+            </div>
             <p>
               Иниц. {combatant.initiative} · {combatant.side === 'npc' ? 'NPC' : 'Игрок'}
             </p>
@@ -2481,6 +3586,7 @@ function CombatantCard({
         </div>
 
         <div className="chip-row">
+          {combatant.isAlly && <span className="chip ally-chip"><Shield size={15} />Союзник</span>}
           {!isLairCombatant && bloodied && <span className="chip danger-chip">Окровавлен</span>}
           {!isLairCombatant && combatant.defeated && <span className="chip muted-chip">Побеждён</span>}
           {!isLairCombatant && combatant.escaped && <span className="chip muted-chip">Сбежал</span>}
@@ -2637,7 +3743,7 @@ function CombatantCard({
 
 function StatusEffectChip({ effect, onRemove }: { effect: CombatEffect; onRemove?: () => void }): JSX.Element {
   const status = getStatusEffectDefinition(effect.statusId);
-  const [popover, setPopover] = useState<{ x: number; y: number } | null>(null);
+  const [popover, setPopover] = useState<PopoverAnchor | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const remainingRounds = typeof effect.remainingRounds === 'number' ? Math.max(0, Math.round(effect.remainingRounds)) : null;
 
@@ -2657,11 +3763,7 @@ function StatusEffectChip({ effect, onRemove }: { effect: CombatEffect; onRemove
   function showPopover(event: MouseEvent<HTMLElement>): void {
     if (!status) return;
     cancelHidePopover();
-    setPopover({ x: event.clientX, y: event.clientY });
-  }
-
-  function movePopover(event: MouseEvent<HTMLElement>): void {
-    if (status && popover) setPopover({ x: event.clientX, y: event.clientY });
+    setPopover(anchorFromElement(event.currentTarget));
   }
 
   const content = (
@@ -2676,7 +3778,6 @@ function StatusEffectChip({ effect, onRemove }: { effect: CombatEffect; onRemove
   const commonProps = {
     className: `chip effect-chip ${status ? 'status-effect-chip' : ''} ${effect.timed ? 'timer-effect-chip' : ''}`,
     onMouseEnter: showPopover,
-    onMouseMove: movePopover,
     onMouseLeave: scheduleHidePopover
   };
 
@@ -2689,7 +3790,7 @@ function StatusEffectChip({ effect, onRemove }: { effect: CombatEffect; onRemove
       ) : (
         <span {...commonProps}>{content}</span>
       )}
-      {status && popover && <StatusEffectPopover status={status} x={popover.x} y={popover.y} onMouseEnter={cancelHidePopover} onMouseLeave={scheduleHidePopover} />}
+      {status && popover && <StatusEffectPopover status={status} anchor={popover} onMouseEnter={cancelHidePopover} onMouseLeave={scheduleHidePopover} />}
     </>
   );
 }
@@ -2700,23 +3801,18 @@ function isConcentrating(effects: CombatEffect[]): boolean {
 
 function StatusEffectPopover({
   status,
-  x,
-  y,
+  anchor,
   onMouseEnter,
   onMouseLeave
 }: {
   status: StatusEffectDefinition;
-  x: number;
-  y: number;
+  anchor: PopoverAnchor;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
 }): JSX.Element {
   const width = Math.min(560, window.innerWidth - 36);
   const maxHeight = Math.min(620, window.innerHeight - 36);
-  const left = Math.min(Math.max(18, x + 18), Math.max(18, window.innerWidth - width - 18));
-  const preferredTop = y + 18;
-  const flippedTop = y - maxHeight - 18;
-  const top = Math.min(Math.max(18, preferredTop + maxHeight > window.innerHeight - 18 ? flippedTop : preferredTop), Math.max(18, window.innerHeight - maxHeight - 18));
+  const { left, top } = positionAnchoredPopover(anchor, width, maxHeight, 18, 10);
 
   return createPortal(
     <aside className="status-popover" style={{ left, top }} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
@@ -2889,22 +3985,21 @@ function StatAdjustModal({
 }
 
 function StatblockPreview({ creature, campaignId }: { creature: CreatureTemplate; campaignId: string }): JSX.Element {
-  const [spellPopover, setSpellPopover] = useState<{ spell: SpellCard | null; x: number; y: number; loading: boolean; error?: string } | null>(null);
+  const [spellPopover, setSpellPopover] = useState<{ spell: SpellCard | null; anchor: PopoverAnchor; loading: boolean; error?: string } | null>(null);
   const [publicFeatureError, setPublicFeatureError] = useState('');
   const [shownPublicFeatureId, setShownPublicFeatureId] = useState('');
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function showSpellCard(href: string, x: number, y: number): Promise<void> {
+  async function showSpellCard(href: string, anchor: PopoverAnchor): Promise<void> {
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current);
       hideTimerRef.current = null;
     }
-    setSpellPopover({ spell: null, x, y, loading: true });
+    setSpellPopover({ spell: null, anchor, loading: true });
     if (typeof api.fetchRuleholderSpell !== 'function') {
       setSpellPopover({
         spell: null,
-        x,
-        y,
+        anchor,
         loading: false,
         error: 'API заклинаний ещё не загружен. Остановите dev-версию через Ctrl+C и запустите npm.cmd run dev заново.'
       });
@@ -2912,12 +4007,11 @@ function StatblockPreview({ creature, campaignId }: { creature: CreatureTemplate
     }
     try {
       const spell = await api.fetchRuleholderSpell(href);
-      setSpellPopover({ spell, x, y, loading: false });
+      setSpellPopover({ spell, anchor, loading: false });
     } catch (err) {
       setSpellPopover({
         spell: null,
-        x,
-        y,
+        anchor,
         loading: false,
         error: err instanceof Error ? err.message : 'Не удалось загрузить заклинание.'
       });
@@ -2992,8 +4086,9 @@ function StatblockPreview({ creature, campaignId }: { creature: CreatureTemplate
     <div
       className="statblock-preview"
       onMouseOver={(event) => {
-        const href = getSpellHref(event.target);
-        if (href) void showSpellCard(href, event.clientX, event.clientY);
+        const link = getSpellLink(event.target);
+        const href = link?.getAttribute('href');
+        if (link && href) void showSpellCard(href, anchorFromElement(link));
       }}
       onMouseLeave={scheduleHideSpellCard}
       onClick={(event) => {
@@ -3147,16 +4242,13 @@ function SpellPopover({
   onMouseEnter,
   onMouseLeave
 }: {
-  state: { spell: SpellCard | null; x: number; y: number; loading: boolean; error?: string };
+  state: { spell: SpellCard | null; anchor: PopoverAnchor; loading: boolean; error?: string };
   onMouseEnter: () => void;
   onMouseLeave: () => void;
 }): JSX.Element {
   const width = Math.min(500, window.innerWidth - 48);
   const maxHeight = Math.min(560, window.innerHeight - 48);
-  const left = Math.min(Math.max(24, state.x + 18), Math.max(24, window.innerWidth - width - 24));
-  const preferredTop = state.y + 18;
-  const flippedTop = state.y - maxHeight - 18;
-  const top = Math.min(Math.max(24, preferredTop + maxHeight > window.innerHeight - 24 ? flippedTop : preferredTop), Math.max(24, window.innerHeight - maxHeight - 24));
+  const { left, top } = positionAnchoredPopover(state.anchor, width, maxHeight, 24, 10);
   const popoverProps = {
     className: 'spell-popover',
     style: { left, top },
@@ -3218,23 +4310,61 @@ function SpellMeta({ label, value, wide = false }: { label: string; value: strin
 }
 
 function getSpellHref(target: EventTarget | null): string | null {
-  const element = target instanceof Element ? target.closest<HTMLAnchorElement>('a[href*="/spells/"]') : null;
-  return element?.getAttribute('href') ?? null;
+  return getSpellLink(target)?.getAttribute('href') ?? null;
+}
+
+function getSpellLink(target: EventTarget | null): HTMLAnchorElement | null {
+  return target instanceof Element ? target.closest<HTMLAnchorElement>('a[href*="/spells/"]') : null;
+}
+
+function anchorFromElement(element: Element): PopoverAnchor {
+  const rect = element.getBoundingClientRect();
+  return {
+    left: rect.left,
+    right: rect.right,
+    top: rect.top,
+    bottom: rect.bottom
+  };
+}
+
+function positionAnchoredPopover(anchor: PopoverAnchor, width: number, maxHeight: number, margin: number, gap: number): { left: number; top: number } {
+  const viewportRight = window.innerWidth - margin;
+  const viewportBottom = window.innerHeight - margin;
+  const preferredLeft = anchor.left;
+  const fallbackLeft = anchor.right - width;
+  const left = Math.min(Math.max(margin, preferredLeft + width > viewportRight ? fallbackLeft : preferredLeft), Math.max(margin, viewportRight - width));
+
+  const belowTop = anchor.bottom + gap;
+  const aboveTop = anchor.top - maxHeight - gap;
+  const hasRoomBelow = belowTop + maxHeight <= viewportBottom;
+  const hasRoomAbove = aboveTop >= margin;
+  const preferredTop = hasRoomBelow || !hasRoomAbove ? belowTop : aboveTop;
+  const top = Math.min(Math.max(margin, preferredTop), Math.max(margin, viewportBottom - maxHeight));
+
+  return { left, top };
 }
 
 function PlayerDisplay(): JSX.Element {
   const params = new URLSearchParams(window.location.hash.split('?')[1] ?? '');
   const campaignId = params.get('campaignId') ?? '';
-  const [view, setView] = useState<PublicCombatView>({ round: 1, combatants: [] });
+  const [view, setView] = useState<PublicCombatView>({ round: 1, combatants: [], settings: DEFAULT_PUBLIC_DISPLAY_SETTINGS });
   const [introAnimating, setIntroAnimating] = useState(false);
+  const [hpEvents, setHpEvents] = useState<Record<string, PublicHpEvent>>({});
   const playerViewInitializedRef = useRef(false);
   const hadCombatRef = useRef(false);
   const introTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousActiveIdRef = useRef<string | null>(null);
+  const sliderCycleOffsetRef = useRef(PLAYER_SLIDER_MIDDLE_REPEAT);
+  const previousHpSignalRef = useRef<Record<string, number>>({});
+  const hpEventTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const combatants = view.combatants;
+  const publicSettings = view.settings ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS;
   const activeIndex = Math.max(
     0,
     combatants.findIndex((combatant) => combatant.isCurrent)
   );
+  const sliderTrack = buildPlayerSliderTrack(combatants);
+  const sliderVirtualIndex = combatants.length ? sliderCycleOffsetRef.current * combatants.length + activeIndex : 0;
   const orderTrack = buildPlayerOrderTrack(combatants, activeIndex, view.round);
 
   useEffect(() => {
@@ -3243,6 +4373,70 @@ function PlayerDisplay(): JSX.Element {
     function applyPlayerView(nextView: PublicCombatView): void {
       const hadCombat = hadCombatRef.current;
       const hasCombat = nextView.combatants.length > 0;
+      const nextActiveId = nextView.combatants.find((combatant) => combatant.isCurrent)?.id ?? null;
+      const nextHpSignals = readPublicHpSignals(nextView.combatants);
+
+      if (!hasCombat || !hadCombat) {
+        sliderCycleOffsetRef.current = PLAYER_SLIDER_MIDDLE_REPEAT;
+      } else {
+        const previousActiveId = previousActiveIdRef.current;
+        const previousIndex = previousActiveId ? nextView.combatants.findIndex((combatant) => combatant.id === previousActiveId) : -1;
+        const nextIndex = nextActiveId ? nextView.combatants.findIndex((combatant) => combatant.id === nextActiveId) : -1;
+        const count = nextView.combatants.length;
+
+        if (count > 1 && previousIndex >= 0 && nextIndex >= 0) {
+          if (previousIndex === count - 1 && nextIndex === 0) {
+            sliderCycleOffsetRef.current += 1;
+          } else if (previousIndex === 0 && nextIndex === count - 1) {
+            sliderCycleOffsetRef.current -= 1;
+          }
+        }
+
+        if (sliderCycleOffsetRef.current <= 0 || sliderCycleOffsetRef.current >= PLAYER_SLIDER_REPEAT - 1) {
+          sliderCycleOffsetRef.current = PLAYER_SLIDER_MIDDLE_REPEAT;
+        }
+      }
+
+      if (playerViewInitializedRef.current && hadCombat && hasCombat) {
+        const previousSignals = previousHpSignalRef.current;
+        const nextEvents: PublicHpEvent[] = [];
+
+        for (const combatant of nextView.combatants) {
+          const previousSignal = previousSignals[combatant.id];
+          const nextSignal = nextHpSignals[combatant.id];
+          if (previousSignal === undefined || nextSignal === undefined || previousSignal === nextSignal) continue;
+
+          const delta = nextSignal - previousSignal;
+          nextEvents.push({
+            id: `${combatant.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            combatantId: combatant.id,
+            amount: Math.abs(delta),
+            kind: delta < 0 ? 'damage' : 'healing'
+          });
+        }
+
+        if (nextEvents.length > 0) {
+          setHpEvents((current) => {
+            const updated = { ...current };
+            for (const event of nextEvents) {
+              updated[event.combatantId] = event;
+              if (hpEventTimersRef.current[event.combatantId]) {
+                clearTimeout(hpEventTimersRef.current[event.combatantId]);
+              }
+              hpEventTimersRef.current[event.combatantId] = setTimeout(() => {
+                setHpEvents((latest) => {
+                  if (latest[event.combatantId]?.id !== event.id) return latest;
+                  const { [event.combatantId]: _removed, ...rest } = latest;
+                  return rest;
+                });
+                delete hpEventTimersRef.current[event.combatantId];
+              }, 1250);
+            }
+            return updated;
+          });
+        }
+      }
+
       setView(nextView);
 
       if (playerViewInitializedRef.current && !hadCombat && hasCombat) {
@@ -3252,6 +4446,8 @@ function PlayerDisplay(): JSX.Element {
       }
 
       hadCombatRef.current = hasCombat;
+      previousActiveIdRef.current = nextActiveId;
+      previousHpSignalRef.current = nextHpSignals;
       playerViewInitializedRef.current = true;
     }
 
@@ -3260,6 +4456,8 @@ function PlayerDisplay(): JSX.Element {
     return () => {
       unsubscribe();
       if (introTimerRef.current) clearTimeout(introTimerRef.current);
+      Object.values(hpEventTimersRef.current).forEach(clearTimeout);
+      hpEventTimersRef.current = {};
     };
   }, [campaignId]);
 
@@ -3286,9 +4484,15 @@ function PlayerDisplay(): JSX.Element {
           )}
           <div className="player-slider-pane">
             <div className="player-slider-window">
-              <div className="player-slider-track" style={{ transform: `translateX(calc(50% - ${activeIndex * PLAYER_CARD_STEP + PLAYER_CARD_CENTER}px))` }}>
-                {combatants.map((combatant, index) => (
-                  <PlayerInitiativeCard combatant={combatant} introIndex={index} key={combatant.id} />
+              <div className="player-slider-track" style={{ transform: `translateX(calc(50% - ${sliderVirtualIndex * PLAYER_CARD_STEP + PLAYER_CARD_CENTER}px))` }}>
+                {sliderTrack.map((item, index) => (
+                  <PlayerInitiativeCard
+                    combatant={item.combatant}
+                    hpEvent={hpEvents[item.combatant.id]}
+                    introIndex={index % Math.max(1, combatants.length)}
+                    key={item.key}
+                    settings={publicSettings}
+                  />
                 ))}
               </div>
             </div>
@@ -3305,7 +4509,7 @@ function PlayerDisplay(): JSX.Element {
                 style={{ transform: `translateY(-${orderTrack.currentIndex * PLAYER_ORDER_ROW_STEP + PLAYER_ORDER_ROW_CENTER}px)` }}
               >
                 {orderTrack.items.map((item, index) => (
-                  <PlayerOrderRow item={item} introIndex={index} key={item.key} />
+                  <PlayerOrderRow hpEvent={item.round === view.round ? hpEvents[item.combatant.id] : undefined} item={item} introIndex={index} key={item.key} settings={publicSettings} />
                 ))}
               </div>
             </div>
@@ -3320,20 +4524,19 @@ function PlayerDisplay(): JSX.Element {
 
 function PublicFeatureCardOverlay({ card }: { card: PublicFeatureCard }): JSX.Element {
   const image = card.tokenUrl || card.imageUrl;
-  const [spellPopover, setSpellPopover] = useState<{ spell: SpellCard | null; x: number; y: number; loading: boolean; error?: string } | null>(null);
+  const [spellPopover, setSpellPopover] = useState<{ spell: SpellCard | null; anchor: PopoverAnchor; loading: boolean; error?: string } | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function showSpellCard(href: string, x: number, y: number): Promise<void> {
+  async function showSpellCard(href: string, anchor: PopoverAnchor): Promise<void> {
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current);
       hideTimerRef.current = null;
     }
-    setSpellPopover({ spell: null, x, y, loading: true });
+    setSpellPopover({ spell: null, anchor, loading: true });
     if (typeof api.fetchRuleholderSpell !== 'function') {
       setSpellPopover({
         spell: null,
-        x,
-        y,
+        anchor,
         loading: false,
         error: 'API заклинаний ещё не загружен. Перезапустите dev-версию приложения.'
       });
@@ -3342,12 +4545,11 @@ function PublicFeatureCardOverlay({ card }: { card: PublicFeatureCard }): JSX.El
 
     try {
       const spell = await api.fetchRuleholderSpell(href);
-      setSpellPopover({ spell, x, y, loading: false });
+      setSpellPopover({ spell, anchor, loading: false });
     } catch (err) {
       setSpellPopover({
         spell: null,
-        x,
-        y,
+        anchor,
         loading: false,
         error: err instanceof Error ? err.message : 'Не удалось загрузить заклинание.'
       });
@@ -3387,8 +4589,9 @@ function PublicFeatureCardOverlay({ card }: { card: PublicFeatureCard }): JSX.El
         <div
           className="public-feature-body"
           onMouseOver={(event) => {
-            const href = getSpellHref(event.target);
-            if (href) void showSpellCard(href, event.clientX, event.clientY);
+            const link = getSpellLink(event.target);
+            const href = link?.getAttribute('href');
+            if (link && href) void showSpellCard(href, anchorFromElement(link));
           }}
           onMouseLeave={scheduleHideSpellCard}
           onClick={(event) => {
@@ -3410,6 +4613,32 @@ interface PlayerOrderTrackItem {
   round: number;
   roundStart: boolean;
   current: boolean;
+}
+
+function buildPlayerSliderTrack(combatants: PublicCombatant[]): Array<{ key: string; combatant: PublicCombatant }> {
+  if (!combatants.length) return [];
+
+  return Array.from({ length: PLAYER_SLIDER_REPEAT }, (_, repeatIndex) =>
+    combatants.map((combatant) => ({
+      key: `${repeatIndex}-${combatant.id}`,
+      combatant
+    }))
+  ).flat();
+}
+
+function readPublicHpSignals(combatants: PublicCombatant[]): Record<string, number> {
+  return Object.fromEntries(
+    combatants
+      .map((combatant) => {
+        const signal = typeof combatant.hpSignal === 'number'
+          ? combatant.hpSignal
+          : typeof combatant.currentHp === 'number'
+            ? combatant.currentHp + (combatant.temporaryHp ?? 0)
+            : undefined;
+        return signal === undefined ? null : [combatant.id, signal];
+      })
+      .filter((entry): entry is [string, number] => Boolean(entry))
+  );
 }
 
 function buildPlayerOrderTrack(combatants: PublicCombatant[], activeIndex: number, currentRound: number): { items: PlayerOrderTrackItem[]; currentIndex: number } {
@@ -3438,13 +4667,52 @@ function buildPlayerOrderTrack(combatants: PublicCombatant[], activeIndex: numbe
   };
 }
 
-function PlayerOrderRow({ item, introIndex }: { item: PlayerOrderTrackItem; introIndex: number }): JSX.Element {
+function getPublicCombatantMeta(combatant: PublicCombatant, settings: PublicDisplaySettings, includeInitiative = false): string[] {
+  const isEnemy = combatant.side === 'npc' && !combatant.isAlly;
+  const parts = includeInitiative ? [`Иниц. ${combatant.initiative}`] : [];
+
+  if (!isEnemy || settings.showEnemyArmorClass) {
+    parts.push(`КД ${combatant.armorClass}`);
+  }
+
+  if (combatant.side === 'player' && combatant.currentHp !== undefined && combatant.maxHp !== undefined) {
+    parts.push(`Хиты ${formatHitPoints(combatant.currentHp, combatant.maxHp, combatant.temporaryHp)}`);
+  }
+
+  if (isEnemy && settings.showEnemySpeeds && combatant.speeds) {
+    parts.push(combatant.speeds);
+  }
+
+  return parts;
+}
+
+function getPublicCombatantName(combatant: PublicCombatant, settings: PublicDisplaySettings): string {
+  if (combatant.side === 'npc' && !combatant.isAlly && settings.hideCreatureNames && !combatant.publicNameVisible) {
+    return 'Существо';
+  }
+  return combatant.name;
+}
+
+function FloatingHpEvent({ event, compact = false }: { event: PublicHpEvent; compact?: boolean }): JSX.Element {
+  const prefix = event.kind === 'damage' ? '-' : '+';
+  return (
+    <span className={`floating-hp-event ${event.kind} ${compact ? 'compact' : ''}`} key={event.id} aria-hidden="true">
+      {prefix}
+      {event.amount}
+    </span>
+  );
+}
+
+function PlayerOrderRow({ hpEvent, item, introIndex, settings }: { hpEvent?: PublicHpEvent; item: PlayerOrderTrackItem; introIndex: number; settings: PublicDisplaySettings }): JSX.Element {
   const combatant = item.combatant;
+  const publicName = getPublicCombatantName(combatant, settings);
+  const meta = getPublicCombatantMeta(combatant, settings, true);
   return (
     <article
-      className={`player-order-row ${item.current ? 'current' : ''} ${combatant.bloodied ? 'bloodied' : ''} ${combatant.defeated ? 'defeated' : ''} ${combatant.escaped ? 'escaped' : ''} ${item.roundStart ? 'round-start' : ''} ${isConcentrating(combatant.effects) ? 'concentrating' : ''}`}
+      className={`player-order-row ${item.current ? 'current' : ''} ${combatant.isAlly ? 'ally' : ''} ${combatant.bloodied ? 'bloodied' : ''} ${combatant.defeated ? 'defeated' : ''} ${combatant.escaped ? 'escaped' : ''} ${item.roundStart ? 'round-start' : ''} ${isConcentrating(combatant.effects) ? 'concentrating' : ''} ${hpEvent ? `hp-event ${hpEvent.kind}` : ''}`}
       style={{ '--intro-index': introIndex % Math.max(1, item.round === 1 ? 12 : 6) } as CSSProperties}
     >
+      {hpEvent && <FloatingHpEvent compact event={hpEvent} />}
       {combatant.defeated && (
         <span className="death-mark small" aria-hidden="true">
           <Skull size={28} />
@@ -3461,10 +4729,11 @@ function PlayerOrderRow({ item, introIndex }: { item: PlayerOrderTrackItem; intr
       <span className="player-order-turn">{item.turnNumber}</span>
       {combatant.tokenUrl ? <img className="player-order-token" src={combatant.tokenUrl} alt="" /> : <span className="player-order-token empty">{combatant.initiative}</span>}
       <div>
-        <h3>{combatant.name}</h3>
-        <p>
-          Иниц. {combatant.initiative} · КД {combatant.armorClass}
-        </p>
+        <div className="public-combatant-name-row">
+          <h3>{publicName}</h3>
+          {combatant.isAlly && <span className="ally-badge public"><Shield size={16} />Союзник</span>}
+        </div>
+        <p>{meta.join(' · ')}</p>
         {combatant.effects.length > 0 && (
           <div className="player-order-effects">
             {combatant.effects.map((effect) => (
@@ -3484,12 +4753,15 @@ function PlayerOrderRow({ item, introIndex }: { item: PlayerOrderTrackItem; intr
   );
 }
 
-function PlayerInitiativeCard({ combatant, introIndex }: { combatant: PublicCombatant; introIndex: number }): JSX.Element {
+function PlayerInitiativeCard({ combatant, hpEvent, introIndex, settings }: { combatant: PublicCombatant; hpEvent?: PublicHpEvent; introIndex: number; settings: PublicDisplaySettings }): JSX.Element {
+  const publicName = getPublicCombatantName(combatant, settings);
+  const meta = getPublicCombatantMeta(combatant, settings);
   return (
     <article
-      className={`player-card ${combatant.isCurrent ? 'current' : ''} ${combatant.bloodied ? 'bloodied' : ''} ${combatant.defeated ? 'defeated' : ''} ${combatant.escaped ? 'escaped' : ''} ${isConcentrating(combatant.effects) ? 'concentrating' : ''}`}
+      className={`player-card ${combatant.isCurrent ? 'current' : ''} ${combatant.isAlly ? 'ally' : ''} ${combatant.bloodied ? 'bloodied' : ''} ${combatant.defeated ? 'defeated' : ''} ${combatant.escaped ? 'escaped' : ''} ${isConcentrating(combatant.effects) ? 'concentrating' : ''} ${hpEvent ? `hp-event ${hpEvent.kind}` : ''}`}
       style={{ '--intro-index': introIndex } as CSSProperties}
     >
+      {hpEvent && <FloatingHpEvent event={hpEvent} />}
       {combatant.defeated && (
         <span className="death-mark" aria-hidden="true">
           <Skull size={54} />
@@ -3507,14 +4779,11 @@ function PlayerInitiativeCard({ combatant, introIndex }: { combatant: PublicComb
         {combatant.tokenUrl && <div className="player-token-init">{combatant.initiative}</div>}
       </div>
       <div className="player-info">
-        <h2>{combatant.name}</h2>
-        <p>
-          КД {combatant.armorClass}
-          {combatant.side === 'player' && combatant.currentHp !== undefined && combatant.maxHp !== undefined
-            ? ` · Хиты ${formatHitPoints(combatant.currentHp, combatant.maxHp, combatant.temporaryHp)}`
-            : ''}
-          {combatant.speeds ? ` · ${combatant.speeds}` : ''}
-        </p>
+        <div className="public-combatant-name-row">
+          <h2>{publicName}</h2>
+          {combatant.isAlly && <span className="ally-badge public"><Shield size={18} />Союзник</span>}
+        </div>
+        {meta.length > 0 && <p>{meta.join(' · ')}</p>}
         <div className="chip-row">
           {combatant.defeated ? (
             <span className="chip muted-chip">Пал</span>
@@ -3562,10 +4831,302 @@ function emptyPlayer(campaignId: string): PlayerCharacter {
     initiativeMod: 0,
     passivePerception: 10,
     active: true,
+    imageUrl: '',
     notes: '',
     createdAt: timestamp,
     updatedAt: timestamp
   };
+}
+
+type UnknownRecord = Record<string, unknown>;
+type AbilityKey = 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha';
+
+const LSS_SKILL_LABELS: Record<string, string> = {
+  acrobatics: 'Акробатика',
+  'animal handling': 'Уход за животными',
+  arcana: 'Магия',
+  athletics: 'Атлетика',
+  deception: 'Обман',
+  history: 'История',
+  insight: 'Проницательность',
+  intimidation: 'Запугивание',
+  investigation: 'Анализ',
+  medicine: 'Медицина',
+  nature: 'Природа',
+  perception: 'Внимательность',
+  performance: 'Выступление',
+  persuasion: 'Убеждение',
+  religion: 'Религия',
+  'sleight of hand': 'Ловкость рук',
+  stealth: 'Скрытность',
+  survival: 'Выживание'
+};
+
+function importPlayerFromLss(payload: unknown, campaignId: string): PlayerCharacter {
+  const raw = getLssRaw(payload);
+  const info = recordValue(raw.info);
+  const vitality = recordValue(raw.vitality);
+  const stats = normalizeLssStats(recordValue(raw.stats));
+  const level = Math.max(1, numberValue(fieldValue(info, 'level', 1), 1));
+  const proficiency = numberValue(fieldValue(raw, 'proficiency', 0), proficiencyBonus(level));
+  const skills = prepareLssSkills(recordValue(raw.skills), stats, proficiency);
+  const textSections = prepareLssTextSections(recordValue(raw.text));
+  const timestamp = new Date().toISOString();
+  const name = stringValue(pathValue(raw, ['name', 'value'], fieldValue(raw, 'name', 'Без имени')), 'Без имени').trim() || 'Без имени';
+  const baseMaxHp = numberValue(fieldValue(vitality, 'hp-max', 0), 0);
+  const maxHpBonus = numberValue(fieldValue(vitality, 'hp-max-bonus', 0), 0);
+  const maxHp = baseMaxHp ? baseMaxHp + maxHpBonus : numberValue(fieldValue(vitality, 'hp-current', 0), 0);
+  const imageUrl = extractLssImageUrl(raw);
+
+  return {
+    id: '',
+    campaignId,
+    name,
+    level,
+    armorClass: numberValue(fieldValue(vitality, 'ac', 10), 10),
+    maxHp: Math.max(1, maxHp || 1),
+    initiativeMod: numberValue(fieldValue(vitality, 'initiative', stats.dex.modifier), stats.dex.modifier),
+    passivePerception: skills.perception?.passive ?? 10 + stats.wis.modifier,
+    active: true,
+    imageUrl,
+    notes: buildLssNotes(textSections),
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+}
+
+function getLssRaw(payload: unknown): UnknownRecord {
+  let raw: unknown = isRecord(payload) && 'data' in payload ? payload.data : payload;
+
+  if (typeof raw === 'string') {
+    raw = JSON.parse(raw);
+  }
+
+  if (!isRecord(raw)) {
+    throw new Error('Long Story Short JSON не содержит данных персонажа.');
+  }
+
+  return raw;
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function recordValue(value: unknown): UnknownRecord {
+  return isRecord(value) ? value : {};
+}
+
+function fieldValue(container: unknown, key: string, fallback: unknown = ''): unknown {
+  const record = recordValue(container);
+  const value = record[key];
+
+  if (isRecord(value) && 'value' in value) {
+    return value.value ?? fallback;
+  }
+
+  return value ?? fallback;
+}
+
+function pathValue(obj: unknown, path: string[], fallback: unknown = ''): unknown {
+  let current: unknown = obj;
+
+  for (const key of path) {
+    if (!isRecord(current)) return fallback;
+    current = current[key];
+  }
+
+  return current ?? fallback;
+}
+
+function stringValue(value: unknown, fallback = ''): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return fallback;
+}
+
+function numberValue(value: unknown, fallback = 0): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number) : fallback;
+}
+
+function abilityModifier(score: unknown): number {
+  return Math.floor((numberValue(score, 10) - 10) / 2);
+}
+
+function normalizeLssStats(stats: UnknownRecord): Record<AbilityKey, { score: number; modifier: number }> {
+  const result = {} as Record<AbilityKey, { score: number; modifier: number }>;
+  const keys: AbilityKey[] = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
+
+  for (const key of keys) {
+    const stat = recordValue(stats[key]);
+    const score = numberValue(stat.score, 10);
+    result[key] = { score, modifier: abilityModifier(score) };
+  }
+
+  return result;
+}
+
+function proficiencyBonus(level: number): number {
+  return Math.ceil((Number(level) || 1) / 4) + 1;
+}
+
+function lssProficiencyMultiplier(item: UnknownRecord): number {
+  for (const key of ['isProf', 'proficient', 'prof']) {
+    if (!(key in item)) continue;
+    const value = item[key];
+    if (typeof value === 'boolean') return value ? 1 : 0;
+    return Number(value) || 0;
+  }
+
+  return 0;
+}
+
+function prepareLssSkills(
+  rawSkills: UnknownRecord,
+  stats: Record<AbilityKey, { score: number; modifier: number }>,
+  proficiency: number
+): Record<string, { label: string; value: number; passive: number; isProficient: boolean }> {
+  const result: Record<string, { label: string; value: number; passive: number; isProficient: boolean }> = {};
+
+  for (const [key, rawSkill] of Object.entries(rawSkills)) {
+    const skill = recordValue(rawSkill);
+    const baseStat = stringValue(skill.baseStat) as AbilityKey;
+    const statMod = stats[baseStat]?.modifier ?? 0;
+    const profMultiplier = lssProficiencyMultiplier(skill);
+    const value = statMod + Math.floor(proficiency * profMultiplier);
+    result[key] = {
+      label: LSS_SKILL_LABELS[key] ?? key,
+      value,
+      passive: value + 10,
+      isProficient: profMultiplier > 0
+    };
+  }
+
+  return result;
+}
+
+function tiptapToText(node: unknown): string {
+  if (!node) return '';
+  if (typeof node === 'string') return node;
+  if (Array.isArray(node)) return node.map(tiptapToText).filter(Boolean).join('\n');
+  if (!isRecord(node)) return '';
+  if (node.type === 'text') return stringValue(node.text);
+
+  const content = Array.isArray(node.content) ? node.content.map(tiptapToText).filter(Boolean) : [];
+  if (node.type === 'paragraph' || node.type === 'heading') {
+    return content.join('').trim();
+  }
+
+  return content.join('\n').trim();
+}
+
+function readLssTextSection(section: unknown): string {
+  const record = recordValue(section);
+  const valueRecord = recordValue(record.value);
+  return tiptapToText(valueRecord.data ?? record.data ?? record.value ?? '').trim();
+}
+
+function prepareLssTextSections(text: UnknownRecord): Record<string, string> {
+  const result: Record<string, string> = {};
+
+  for (const [key, section] of Object.entries(text)) {
+    const body = readLssTextSection(section);
+    if (body) result[key] = body;
+  }
+
+  return result;
+}
+
+function buildLssNotes(textSections: Record<string, string>): string {
+  const namedNotes = Object.entries(textSections)
+    .filter(([key]) => /^notes-\d+$/i.test(key) && key !== 'notes-1')
+    .sort(([left], [right]) => left.localeCompare(right, 'ru', { numeric: true }))
+    .map(([key, value]) => `Заметки ${key.replace('notes-', '')}:\n${value}`);
+
+  return [
+    textSections.background && `Предыстория:\n${textSections.background}`,
+    textSections.personality && `Черты характера:\n${textSections.personality}`,
+    textSections.trait && `Черты характера:\n${textSections.trait}`,
+    textSections.ideals && `Идеалы:\n${textSections.ideals}`,
+    textSections.ideal && `Идеалы:\n${textSections.ideal}`,
+    textSections.bonds && `Привязанности:\n${textSections.bonds}`,
+    textSections.bond && `Привязанности:\n${textSections.bond}`,
+    textSections.flaws && `Слабости:\n${textSections.flaws}`,
+    textSections.flaw && `Слабости:\n${textSections.flaw}`,
+    textSections['notes-1'] && `Заметки:\n${textSections['notes-1']}`,
+    ...namedNotes
+  ].filter(Boolean).join('\n\n');
+}
+
+function extractLssImageUrl(raw: UnknownRecord): string {
+  const directPaths = [
+    ['image'],
+    ['avatar'],
+    ['portrait'],
+    ['photo'],
+    ['picture'],
+    ['art'],
+    ['token'],
+    ['info', 'image'],
+    ['info', 'avatar'],
+    ['info', 'portrait'],
+    ['info', 'photo'],
+    ['info', 'picture'],
+    ['info', 'art'],
+    ['profile', 'image'],
+    ['profile', 'avatar'],
+    ['profile', 'portrait'],
+    ['appearance', 'image'],
+    ['appearance', 'avatar'],
+    ['appearance', 'portrait']
+  ];
+
+  for (const path of directPaths) {
+    const url = imageUrlFromUnknown(pathValue(raw, path));
+    if (url) return url;
+  }
+
+  return findImageUrlByKey(raw);
+}
+
+function imageUrlFromUnknown(value: unknown): string {
+  if (typeof value === 'string') return isUsableImageUrl(value) ? value.trim() : '';
+  if (!isRecord(value)) return '';
+
+  for (const key of ['webp', 'jpeg', 'jpg', 'png', 'url', 'src', 'href', 'path', 'value', 'data']) {
+    const url = imageUrlFromUnknown(value[key]);
+    if (url) return url;
+  }
+
+  return '';
+}
+
+function findImageUrlByKey(record: UnknownRecord, depth = 0): string {
+  if (depth > 4) return '';
+
+  for (const [key, value] of Object.entries(record)) {
+    if (isImageLikeKey(key)) {
+      const directUrl = imageUrlFromUnknown(value);
+      if (directUrl) return directUrl;
+    }
+
+    if (isRecord(value)) {
+      const nestedUrl = findImageUrlByKey(value, depth + 1);
+      if (nestedUrl) return nestedUrl;
+    }
+  }
+
+  return '';
+}
+
+function isImageLikeKey(key: string): boolean {
+  return /avatar|portrait|image|token|photo|picture|art|illustration/i.test(key);
+}
+
+function isUsableImageUrl(value: string): boolean {
+  const clean = value.trim();
+  return /^https?:\/\//i.test(clean) || /^data:image\//i.test(clean);
 }
 
 function emptyCreature(campaignId: string): SaveCreatureTemplateInput {
@@ -3638,24 +5199,11 @@ function clientId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function featuresToText(features: CreatureFeature[]): string {
-  return features.map((feature) => `${feature.name}: ${feature.description}`).join('\n');
-}
-
-function textToFeatures(value: string, section: string): CreatureFeature[] {
-  return value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line, index) => {
-      const [name, ...description] = line.split(':');
-      const cleanName = name.trim() || `${section} ${index + 1}`;
-      return {
-        id: `${section}-${index}-${cleanName}`.replace(/\s+/g, '-').toLocaleLowerCase('ru'),
-        name: cleanName,
-        section,
-        description: description.join(':').trim() || line,
-        html: ''
-      };
-    });
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener('load', () => resolve(String(reader.result ?? '')));
+    reader.addEventListener('error', () => reject(reader.error ?? new Error('Не удалось прочитать файл изображения.')));
+    reader.readAsDataURL(file);
+  });
 }

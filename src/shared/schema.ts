@@ -18,6 +18,7 @@ export const playerCharacters = sqliteTable('player_characters', {
   initiativeMod: integer('initiative_mod').notNull(),
   passivePerception: integer('passive_perception').notNull(),
   active: integer('active', { mode: 'boolean' }).notNull(),
+  imageUrl: text('image_url').notNull().default(''),
   notes: text('notes').notNull().default(''),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull()
@@ -83,6 +84,7 @@ export const encounterCreatureGroups = sqliteTable('encounter_creature_groups', 
   initiativeOverride: integer('initiative_override'),
   hpMode: text('hp_mode').notNull().default('average'),
   hpOverride: integer('hp_override'),
+  isAlly: integer('is_ally', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull()
 });
@@ -120,6 +122,7 @@ export const combatSessions = sqliteTable('combat_sessions', {
   activeCombatantId: text('active_combatant_id'),
   totalXp: integer('total_xp').notNull(),
   xpPerPlayer: integer('xp_per_player').notNull(),
+  xpAllyCount: integer('xp_ally_count').notNull().default(0),
   startedAt: text('started_at').notNull(),
   endedAt: text('ended_at')
 });
@@ -131,6 +134,7 @@ export const combatants = sqliteTable('combatants', {
   playerId: text('player_id'),
   name: text('name').notNull(),
   side: text('side').notNull(),
+  isAlly: integer('is_ally', { mode: 'boolean' }).notNull().default(false),
   armorClass: integer('armor_class').notNull(),
   baseArmorClass: integer('base_armor_class').notNull().default(0),
   maxHp: integer('max_hp').notNull(),
@@ -144,6 +148,7 @@ export const combatants = sqliteTable('combatants', {
   turnOrder: integer('turn_order').notNull(),
   effectsJson: text('effects_json').notNull(),
   publicNotes: text('public_notes').notNull().default(''),
+  publicNameVisible: integer('public_name_visible', { mode: 'boolean' }).notNull().default(false),
   snapshotJson: text('snapshot_json'),
   defeated: integer('defeated', { mode: 'boolean' }).notNull(),
   escaped: integer('escaped', { mode: 'boolean' }).notNull().default(false),

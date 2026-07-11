@@ -24,6 +24,7 @@ export interface PlayerCharacter extends Timestamped {
   initiativeMod: number;
   passivePerception: number;
   active: boolean;
+  imageUrl: string;
   notes: string;
 }
 
@@ -131,6 +132,7 @@ export interface EncounterCreatureGroup extends Timestamped {
   initiativeOverride: number | null;
   hpMode: HitPointMode;
   hpOverride: number | null;
+  isAlly: boolean;
 }
 
 export interface EncounterPlayerSetting extends Timestamped {
@@ -172,6 +174,7 @@ export interface CombatSession {
   activeCombatantId: string | null;
   totalXp: number;
   xpPerPlayer: number;
+  xpAllyCount: number;
   startedAt: string;
   endedAt: string | null;
   combatants: Combatant[];
@@ -184,6 +187,7 @@ export interface Combatant {
   playerId: string | null;
   name: string;
   side: CombatSide;
+  isAlly: boolean;
   armorClass: number;
   baseArmorClass: number;
   maxHp: number;
@@ -197,6 +201,7 @@ export interface Combatant {
   turnOrder: number;
   effects: CombatEffect[];
   publicNotes: string;
+  publicNameVisible: boolean;
   snapshot: CreatureTemplate | PlayerCharacter | EncounterLair | null;
   defeated: boolean;
   escaped: boolean;
@@ -207,10 +212,12 @@ export interface PublicCombatant {
   id: string;
   name: string;
   side: CombatSide;
+  isAlly?: boolean;
   armorClass: number;
   initiative: number;
   turnOrder: number;
   effects: CombatEffect[];
+  publicNameVisible: boolean;
   bloodied: boolean;
   defeated: boolean;
   escaped: boolean;
@@ -223,11 +230,25 @@ export interface PublicCombatant {
   currentHp?: number;
   maxHp?: number;
   temporaryHp?: number;
+  hpSignal?: number;
 }
+
+export interface PublicDisplaySettings {
+  showEnemyArmorClass: boolean;
+  showEnemySpeeds: boolean;
+  hideCreatureNames: boolean;
+}
+
+export const DEFAULT_PUBLIC_DISPLAY_SETTINGS: PublicDisplaySettings = {
+  showEnemyArmorClass: true,
+  showEnemySpeeds: true,
+  hideCreatureNames: false
+};
 
 export interface PublicCombatView {
   round: number;
   combatants: PublicCombatant[];
+  settings: PublicDisplaySettings;
   featureCard?: PublicFeatureCard | null;
   xpAward?: CombatXpAward | null;
 }
@@ -267,6 +288,7 @@ export interface SavePlayerInput {
   initiativeMod: number;
   passivePerception: number;
   active: boolean;
+  imageUrl?: string;
   notes?: string;
 }
 
@@ -288,6 +310,7 @@ export interface SaveEncounterGroupInput {
   initiativeOverride?: number | null;
   hpMode?: HitPointMode;
   hpOverride?: number | null;
+  isAlly?: boolean;
 }
 
 export interface SaveEncounterPlayerSettingInput {
@@ -320,6 +343,7 @@ export interface CombatantPatch {
   turnOrder?: number;
   effects?: CombatEffect[];
   publicNotes?: string;
+  publicNameVisible?: boolean;
   defeated?: boolean;
   escaped?: boolean;
   visible?: boolean;
@@ -331,15 +355,21 @@ export interface CompleteCombatOptions {
   defeatedGiveXp: boolean;
   escapedXpMode: EscapedXpMode;
   customXpPool?: number;
+  xpAdjustment?: number;
+  shareXpWithAllies?: boolean;
+  xpAllyIds?: string[];
 }
 
 export interface CombatXpAward {
   totalXp: number;
   xpPerPlayer: number;
   playerCount: number;
+  allyRecipientCount: number;
+  recipientCount: number;
   defeatedNpcCount: number;
   escapedNpcCount: number;
   customPool: boolean;
+  xpAdjustment: number;
 }
 
 export interface CompleteCombatResult {
@@ -348,6 +378,24 @@ export interface CompleteCombatResult {
   escapedNpcCount: number;
   activePlayerCount: number;
   xpAward: CombatXpAward;
+}
+
+export type UpdateStatusKind = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+
+export interface AppUpdateStatus {
+  status: UpdateStatusKind;
+  currentVersion: string;
+  version?: string;
+  releaseName?: string;
+  releaseDate?: string;
+  releaseNotes?: string;
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  bytesPerSecond?: number;
+  canInstall?: boolean;
+  releaseUrl?: string;
+  message?: string;
 }
 
 export interface TrackerApi {
@@ -385,4 +433,11 @@ export interface TrackerApi {
   openPlayerWindow: (campaignId: string) => Promise<void>;
   getPlayerView: (campaignId: string) => Promise<PublicCombatView>;
   onPlayerView: (callback: (view: PublicCombatView) => void) => () => void;
+  getPublicDisplaySettings: () => Promise<PublicDisplaySettings>;
+  savePublicDisplaySettings: (settings: PublicDisplaySettings) => Promise<PublicDisplaySettings>;
+  getUpdateStatus: () => Promise<AppUpdateStatus>;
+  checkForUpdates: () => Promise<AppUpdateStatus>;
+  downloadUpdate: () => Promise<AppUpdateStatus>;
+  installUpdate: () => Promise<void>;
+  onUpdateStatus: (callback: (status: AppUpdateStatus) => void) => () => void;
 }
