@@ -99,7 +99,7 @@ npm.cmd run release:publish
 
 - берёт версию из `package.json`;
 - проверяет, что рабочее дерево закоммичено;
-- проверяет наличие `release\DnD 2024 Battle Tracker Setup <version>.exe`, `.blockmap` и `latest.yml`;
+- проверяет наличие `release\DnD-2024-Battle-Tracker-Setup-<version>.exe`, `.blockmap` и `latest.yml`;
 - создаёт тег `v<version>`;
 - пушит ветку и тег;
 - создаёт или обновляет GitHub Release;

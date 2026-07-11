@@ -52,7 +52,7 @@ function Get-ReleaseArtifacts {
   )
 
   $releaseDir = Join-Path $Root "release"
-  $installerName = "DnD 2024 Battle Tracker Setup $Version.exe"
+  $installerName = "DnD-2024-Battle-Tracker-Setup-$Version.exe"
   $installerPath = Join-Path $releaseDir $installerName
   $blockmapPath = "$installerPath.blockmap"
   $latestPath = Join-Path $releaseDir "latest.yml"
