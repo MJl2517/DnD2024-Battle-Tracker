@@ -19,8 +19,20 @@
   min-height: 0;
 }
 
+.encounters-workspace > .encounter-layout {
+  grid-template-columns: minmax(280px, 360px) minmax(480px, 1fr);
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .encounter-layout > .panel {
   min-height: 0;
+  overflow: auto;
+}
+
+.encounters-workspace > .encounter-layout > .panel {
   overflow: auto;
 }
 

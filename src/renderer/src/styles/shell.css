@@ -487,7 +487,8 @@ textarea::placeholder {
   transition: margin-left 180ms ease;
 }
 
-.workspace.players-workspace {
+.workspace.players-workspace,
+.workspace.encounters-workspace {
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -496,7 +497,10 @@ textarea::placeholder {
 
 .players-workspace > .topbar,
 .players-workspace > .notice,
-.players-workspace > .tabs {
+.players-workspace > .tabs,
+.encounters-workspace > .topbar,
+.encounters-workspace > .notice,
+.encounters-workspace > .tabs {
   flex: 0 0 auto;
 }
 

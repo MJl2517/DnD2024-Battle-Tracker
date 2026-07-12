@@ -97,6 +97,7 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
   await expect(page.getByRole('button', { name: 'Экран игроков' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Энкаунтеры', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1 && window.scrollY === 0)).toBe(true);
   const encounterPanel = page.locator('.encounter-layout > .panel').nth(1);
   const stickyHeader = encounterPanel.locator('.encounter-sticky-header');
   const difficultyPanel = stickyHeader.locator('.encounter-difficulty-panel');
@@ -119,6 +120,8 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
     panel.append(filler);
     panel.scrollTop = panel.scrollHeight;
   });
+  await expect.poll(() => encounterPanel.evaluate((panel) => panel.scrollHeight > panel.clientHeight && panel.scrollTop > 0)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   await expect.poll(async () => Math.round((await stickyHeader.boundingBox())?.y ?? -1)).toBe(Math.round(initialHeaderBox.y));
   await expect(stickyHeader.getByRole('button', { name: 'Начать бой' })).toBeVisible();
   await expect(stickyHeader.getByText('Оценка сложности', { exact: true })).toBeVisible();

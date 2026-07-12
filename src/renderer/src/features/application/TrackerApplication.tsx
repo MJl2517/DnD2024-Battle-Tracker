@@ -147,7 +147,7 @@ export function MasterApp(): JSX.Element {
         </div>
       </aside>
 
-      <main className={`workspace ${tab === 'players' ? 'players-workspace' : ''}`}>
+      <main className={`workspace ${tab === 'players' ? 'players-workspace' : tab === 'encounters' ? 'encounters-workspace' : ''}`}>
         <header className="topbar">
           <div>
             <p className="eyebrow">Профиль кампании</p>
