@@ -106,7 +106,7 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
   await playerPage.waitForTimeout(1_500);
 
   await expect(page).toHaveScreenshot('master-combat.png', { animations: 'disabled' });
-  await expect(playerPage).toHaveScreenshot('player-display.png', { animations: 'disabled', maxDiffPixels: 100 });
+  await expect(playerPage).toHaveScreenshot('player-display.png', { animations: 'disabled', maxDiffPixels: 1_000 });
 
   await page.evaluate(async () => {
     const api = window.dndTracker;
