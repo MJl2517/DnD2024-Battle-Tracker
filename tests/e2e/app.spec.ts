@@ -107,8 +107,10 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
   await stickyHeader.getByRole('button', { name: 'Развернуть оценку сложности' }).click();
   await expect(difficultyPanel).not.toHaveClass(/collapsed/);
   await expect(stickyHeader.getByText('Оценка сложности', { exact: true })).toBeVisible();
+  const encounterPanelBox = await encounterPanel.boundingBox();
   const initialHeaderBox = await stickyHeader.boundingBox();
-  if (!initialHeaderBox) throw new Error('Не удалось определить положение закреплённого блока энкаунтера.');
+  if (!encounterPanelBox || !initialHeaderBox) throw new Error('Не удалось определить положение закреплённого блока энкаунтера.');
+  expect(Math.abs(initialHeaderBox.y - encounterPanelBox.y)).toBeLessThanOrEqual(1);
 
   await encounterPanel.evaluate((panel) => {
     const filler = document.createElement('div');

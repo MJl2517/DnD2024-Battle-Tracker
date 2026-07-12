@@ -24,11 +24,15 @@
   overflow: auto;
 }
 
+.encounter-layout > .panel:nth-child(2) {
+  padding-top: 0;
+}
+
 .encounter-sticky-header {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky, 20);
-  margin: -22px -22px 22px;
+  margin: 0 -22px 22px;
   padding: 22px 22px 1px;
   background: rgb(29, 24, 19);
   border-bottom: 1px solid rgba(244, 218, 171, 0.18);
