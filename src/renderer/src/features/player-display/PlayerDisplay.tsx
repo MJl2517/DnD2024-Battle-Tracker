@@ -1,20 +1,12 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
-import { Dices, LogOut, Shield, Skull, Swords } from 'lucide-react';
-import {
-  DEFAULT_PUBLIC_DISPLAY_SETTINGS,
-  type PublicCombatant,
-  type PublicCombatView,
-  type PublicDisplaySettings,
-  type PublicFeatureCard,
-  type SpellCard
-} from '@shared/types';
+import { Dices, LogOut, Shield, Skull } from 'lucide-react';
+import { DEFAULT_PUBLIC_DISPLAY_SETTINGS, type PublicCombatant, type PublicCombatView, type PublicDisplaySettings } from '@shared/types';
 import { InlineEmpty } from '../../shared/ui/PanelTitle';
-import { SpellPopover } from '../../shared/ui/SpellPopover';
 import { StatusEffectChip } from '../../shared/ui/StatusEffectChip';
-import { anchorFromElement, getSpellHref, getSpellLink, type PopoverAnchor } from '../../shared/lib/popover';
 import { isConcentrating } from '../../shared/lib/combatEffects';
 import { XpAwardModal } from '../../shared/ui/XpAwardModal';
 import { formatHitPoints } from '../combat/model/hitPoints';
+import { PublicFeatureCardOverlay } from './PublicFeatureCardOverlay';
 
 const api = window.dndTracker;
 const PLAYER_CARD_STEP = 730;
@@ -219,90 +211,6 @@ export function PlayerDisplay(): JSX.Element {
       {view.featureCard && <PublicFeatureCardOverlay card={view.featureCard} />}
       {view.xpAward && <XpAwardModal award={view.xpAward} publicView />}
     </main>
-  );
-}
-
-function PublicFeatureCardOverlay({ card }: { card: PublicFeatureCard }): JSX.Element {
-  const image = card.tokenUrl || card.imageUrl;
-  const [spellPopover, setSpellPopover] = useState<{ spell: SpellCard | null; anchor: PopoverAnchor; loading: boolean; error?: string } | null>(null);
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  async function showSpellCard(href: string, anchor: PopoverAnchor): Promise<void> {
-    if (hideTimerRef.current) {
-      clearTimeout(hideTimerRef.current);
-      hideTimerRef.current = null;
-    }
-    setSpellPopover({ spell: null, anchor, loading: true });
-    if (typeof api.fetchRuleholderSpell !== 'function') {
-      setSpellPopover({
-        spell: null,
-        anchor,
-        loading: false,
-        error: 'API заклинаний ещё не загружен. Перезапустите dev-версию приложения.'
-      });
-      return;
-    }
-
-    try {
-      const spell = await api.fetchRuleholderSpell(href);
-      setSpellPopover({ spell, anchor, loading: false });
-    } catch (err) {
-      setSpellPopover({
-        spell: null,
-        anchor,
-        loading: false,
-        error: err instanceof Error ? err.message : 'Не удалось загрузить заклинание.'
-      });
-    }
-  }
-
-  function scheduleHideSpellCard(): void {
-    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    hideTimerRef.current = setTimeout(() => setSpellPopover(null), 220);
-  }
-
-  function cancelHideSpellCard(): void {
-    if (!hideTimerRef.current) return;
-    clearTimeout(hideTimerRef.current);
-    hideTimerRef.current = null;
-  }
-
-  useEffect(() => () => cancelHideSpellCard(), []);
-
-  return (
-    <aside className="public-feature-overlay" aria-live="polite">
-      <section className="public-feature-card">
-        <header className="public-feature-header">
-          {image ? (
-            <img src={image} alt="" />
-          ) : (
-            <span className="public-feature-icon">
-              <Swords size={54} />
-            </span>
-          )}
-          <div>
-            <p>{card.sourceType === 'lair' ? 'Эффект логова' : card.sourceName}</p>
-            <h2>{card.featureName}</h2>
-            <span>{card.section}</span>
-          </div>
-        </header>
-        <div
-          className="public-feature-body"
-          onMouseOver={(event) => {
-            const link = getSpellLink(event.target);
-            const href = link?.getAttribute('href');
-            if (link && href) void showSpellCard(href, anchorFromElement(link));
-          }}
-          onMouseLeave={scheduleHideSpellCard}
-          onClick={(event) => {
-            if (getSpellHref(event.target)) event.preventDefault();
-          }}
-        >
-          {card.html ? <div className="feature-html" dangerouslySetInnerHTML={{ __html: card.html }} /> : <p>{card.description}</p>}
-        </div>
-        {spellPopover && <SpellPopover state={spellPopover} onMouseEnter={cancelHideSpellCard} onMouseLeave={scheduleHideSpellCard} />}
-      </section>
-    </aside>
   );
 }
 
