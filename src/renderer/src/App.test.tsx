@@ -38,7 +38,7 @@ describe('PlayerDisplay', () => {
     render(<App />);
 
     expect((await screen.findAllByText('Паровой мефит')).length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText('Окровавлен')).toBeInTheDocument();
+    expect(screen.getAllByText('Окровавлен').length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText('Замедлен').length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText('Раунд 2').length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText(/Хиты/)).not.toBeInTheDocument();

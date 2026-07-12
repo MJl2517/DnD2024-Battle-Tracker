@@ -1,0 +1,40 @@
+import type { SaveCreatureTemplateInput } from '@shared/types';
+
+export function emptyCreature(campaignId: string): SaveCreatureTemplateInput {
+  return {
+    campaignId,
+    name: '',
+    originalName: '',
+    size: '',
+    creatureType: '',
+    alignment: '',
+    armorClass: 10,
+    initiativeMod: 0,
+    initiativeScore: 10,
+    hitPoints: 1,
+    hitDice: '',
+    speeds: '',
+    abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+    savingThrows: {},
+    skills: '',
+    vulnerabilities: '',
+    resistances: '',
+    immunities: '',
+    conditionImmunities: '',
+    senses: '',
+    languages: '',
+    challengeRating: '',
+    xp: 0,
+    proficiencyBonus: 2,
+    traits: [],
+    actions: [],
+    imageUrl: '',
+    tokenUrl: '',
+    lairName: '',
+    lairDescription: '',
+    lairHtml: '',
+    lairEffects: [],
+    sourceUrl: '',
+    notes: ''
+  };
+}

@@ -1,0 +1,22 @@
+:root {
+  color: #f7efe2;
+  background: #17130f;
+  font-family: Inter, 'Segoe UI', Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --color-bg: #17130f;
+  --color-surface: #241f1a;
+  --color-text: #f7efe2;
+  --color-accent: #f8d99a;
+  --color-danger: #8d3028;
+  --color-success: #2c6558;
+  --control-radius: 6px;
+  --popover-layer: 1001;
+  --modal-layer: 1200;
+  --motion-fast: 160ms;
+  --motion-normal: 240ms;
+  --scrollbar-track: rgba(14, 12, 10, 0.58);
+  --scrollbar-thumb: rgba(248, 217, 154, 0.36);
+  --scrollbar-thumb-hover: rgba(248, 217, 154, 0.58);
+  --scrollbar-thumb-active: rgba(248, 217, 154, 0.78);
+}
