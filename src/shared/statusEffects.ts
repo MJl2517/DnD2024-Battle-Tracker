@@ -168,15 +168,13 @@ export function getStatusEffectDefinition(statusId: string | undefined): StatusE
   return statusId ? STATUS_BY_ID.get(statusId) : undefined;
 }
 
+/** Раскрывает составное состояние в обязательные дочерние состояния, например Бессознательный. */
 export function expandStatusEffectIds(statusId: string): readonly string[] {
   return statusId === UNCONSCIOUS_STATUS_ID ? UNCONSCIOUS_DEPENDENCY_STATUS_IDS : [statusId];
 }
 
-export function addStatusEffects(
-  effects: CombatEffect[],
-  statusIds: readonly string[],
-  createId: () => string
-): CombatEffect[] {
+/** Добавляет состояния без дублей и сохраняет пользовательские эффекты, уже находящиеся на карточке. */
+export function addStatusEffects(effects: CombatEffect[], statusIds: readonly string[], createId: () => string): CombatEffect[] {
   const nextEffects = [...effects];
   const existingStatusIds = new Set(nextEffects.map((effect) => effect.statusId).filter(Boolean));
 
@@ -197,6 +195,7 @@ export function addStatusEffects(
   return nextEffects;
 }
 
+/** Удаляет только системные состояния с указанными id, не затрагивая одноимённые пользовательские эффекты. */
 export function removeStatusEffects(effects: CombatEffect[], statusIds: readonly string[]): CombatEffect[] {
   const statusIdsToRemove = new Set(statusIds);
   return effects.filter((effect) => !effect.statusId || !statusIdsToRemove.has(effect.statusId));

@@ -9,6 +9,10 @@ export interface AppDatabase {
   orm: BetterSQLite3Database<typeof schema>;
 }
 
+/**
+ * Открывает пользовательскую базу и безопасно доводит её схему до текущей версии.
+ * Файл хранится в каталоге Electron userData, поэтому обновление приложения не стирает кампании.
+ */
 export function openAppDatabase(userDataPath: string): AppDatabase {
   const databasePath = join(userDataPath, 'dnd-2024-battle-tracker.sqlite');
   mkdirSync(dirname(databasePath), { recursive: true });
@@ -24,6 +28,7 @@ export function openAppDatabase(userDataPath: string): AppDatabase {
   };
 }
 
+/** Создаёт изолированную SQLite в памяти для интеграционных тестов репозиториев. */
 export function openMemoryDatabase(): AppDatabase {
   const sqlite = new Database(':memory:');
   sqlite.pragma('foreign_keys = ON');
@@ -34,6 +39,10 @@ export function openMemoryDatabase(): AppDatabase {
   };
 }
 
+/**
+ * Создаёт отсутствующие таблицы и колонки без изменения уже сохранённых строк.
+ * Здесь намеренно нет пересоздания таблиц: старые пользовательские базы должны открываться без сброса.
+ */
 function runMigrations(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS campaigns (

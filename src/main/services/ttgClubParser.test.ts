@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTtgClubMonster, parseTtgClubSpell } from './ruleholderParser';
+import { parseTtgClubMonster, parseTtgClubSpell } from '../importers/ttgClub/parser';
 
 describe('parseTtgClubMonster', () => {
   it('extracts TTG Club Nuxt bestiary data and lair effects', () => {
@@ -108,9 +108,7 @@ const ttgCreature = {
   immunity: 'ядовитый; отравленный',
   sense: 'слепое зрение 60 фт., тёмное зрение 120 фт., пассивная внимательность 22',
   languages: 'общий, драконий',
-  traits: [
-    { name: { rus: 'Амфибия' }, description: ['Дракон может дышать воздухом и водой.'] }
-  ],
+  traits: [{ name: { rus: 'Амфибия' }, description: ['Дракон может дышать воздухом и водой.'] }],
   actions: [
     { name: { rus: 'Мультиатака' }, description: ['Дракон совершает 3 атаки Разрыванием.'] },
     { name: { rus: 'Ядовитое дыхание (перезарядка 5-6)' }, description: ['{@i Спасбросок Телосложения:} Сл. 18.'] },

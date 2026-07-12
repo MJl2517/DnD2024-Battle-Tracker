@@ -90,6 +90,10 @@ const BUDGET_META: Array<Pick<EncounterDifficultyBudget, 'key' | 'label' | 'desc
   { key: 'high', label: 'Высокая', description: 'Потенциально смертельная сцена, требующая тактики и существенных ресурсов.' }
 ];
 
+/**
+ * Оценивает сложность по уровням участвующих игроков и опыту враждебных групп.
+ * Союзники исключаются из вражеского бюджета, поэтому результат с ними считается ориентировочным.
+ */
 export function calculateEncounterDifficulty(
   players: PlayerCharacter[],
   playerSettings: EncounterPlayerSetting[],
@@ -157,7 +161,7 @@ export function calculateEncounterDifficulty(
 function getCreatureDifficultyXp(creature: CreatureTemplate): number {
   if (creature.xp > 0) return creature.xp;
   const cr = normalizeChallengeRating(creature.challengeRating);
-  return cr ? XP_BY_CR[cr] ?? 0 : 0;
+  return cr ? (XP_BY_CR[cr] ?? 0) : 0;
 }
 
 function normalizeChallengeRating(value: string): string {

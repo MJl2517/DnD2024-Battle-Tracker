@@ -26,25 +26,31 @@ export const randomDieRollSource: DieRollSource = {
   die: (sides: number) => Math.floor(Math.random() * sides) + 1
 };
 
+/** Бросает инициативу. Источник случайности передаётся отдельно, чтобы правило было детерминированно в тестах. */
 export function rollInitiative(modifier: number, source: RollSource = randomRollSource): number {
   return source.d20() + modifier;
 }
 
+/** Реализует преимущество: бросаются два d20, после чего к лучшему результату добавляется модификатор. */
 export function rollInitiativeWithAdvantage(modifier: number, source: RollSource = randomRollSource): number {
   return Math.max(source.d20(), source.d20()) + modifier;
 }
 
+/** Возвращает признак «Окровавлен», не считая существ с нулевыми хитами. */
 export function isBloodied(currentHp: number, maxHp: number): boolean {
   return maxHp > 0 && currentHp > 0 && currentHp <= Math.floor(maxHp / 2);
 }
 
+/** Ограничивает текущие хиты диапазоном от нуля до актуального максимума. */
 export function normalizeHp(value: number, maxHp: number): number {
   return Math.max(0, Math.min(maxHp, Number.isFinite(value) ? Math.round(value) : 0));
 }
 
-export function sortCombatants<T extends Pick<Combatant, 'initiative' | 'initiativeMod' | 'turnOrder' | 'name'>>(
-  combatants: T[]
-): T[] {
+/**
+ * Формирует стабильный порядок инициативы.
+ * При равенстве сначала сравнивается модификатор, затем ручной порядок и только потом имя.
+ */
+export function sortCombatants<T extends Pick<Combatant, 'initiative' | 'initiativeMod' | 'turnOrder' | 'name'>>(combatants: T[]): T[] {
   return [...combatants].sort((a, b) => {
     if (b.initiative !== a.initiative) return b.initiative - a.initiative;
     if (b.initiativeMod !== a.initiativeMod) return b.initiativeMod - a.initiativeMod;
@@ -64,6 +70,7 @@ export function getVisibleEffects(effects: CombatEffect[]): CombatEffect[] {
   return effects.filter((effect) => effect.public);
 }
 
+/** Уменьшает длительность временных эффектов и удаляет завершившиеся, не меняя постоянные состояния. */
 export function tickTimedEffects(effects: CombatEffect[], rounds = 1): CombatEffect[] {
   const elapsedRounds = Math.max(0, Math.round(rounds));
   if (elapsedRounds <= 0) return effects;
@@ -75,6 +82,10 @@ export function tickTimedEffects(effects: CombatEffect[], rounds = 1): CombatEff
   });
 }
 
+/**
+ * Строит безопасную модель для экрана игроков.
+ * Точные хиты NPC намеренно не копируются; игроки получают только публичные эффекты и сигналы состояния.
+ */
 export function toPublicCombatants(combatants: Combatant[], activeCombatantId: string | null): PublicCombatant[] {
   return sortCombatants(combatants)
     .filter((combatant) => combatant.visible)
@@ -118,6 +129,10 @@ export function toPublicCombatants(combatants: Combatant[], activeCombatantId: s
     });
 }
 
+/**
+ * Считает итоговый пул опыта и делит его между участниками с округлением вниз.
+ * Союзники становятся получателями только по явному выбору мастера и сами опыт в пул не добавляют.
+ */
 export function calculateExperience(
   combatants: Array<Pick<Combatant, 'id' | 'side' | 'isAlly' | 'currentHp' | 'defeated' | 'escaped' | 'snapshot'>>,
   participatingPlayers: Pick<PlayerCharacter, 'active'>[],
@@ -139,7 +154,7 @@ export function calculateExperience(
   const xpAdjustment = Math.round(options.xpAdjustment ?? 0);
   const totalXp = Math.max(0, baseTotalXp + xpAdjustment);
   const activePlayerCount = participatingPlayers.filter((player) => player.active).length;
-  const selectedAllyIds = new Set(options.shareXpWithAllies ? options.xpAllyIds ?? [] : []);
+  const selectedAllyIds = new Set(options.shareXpWithAllies ? (options.xpAllyIds ?? []) : []);
   const allyRecipientCount = combatants.filter((combatant) => combatant.side === 'npc' && combatant.isAlly && selectedAllyIds.has(combatant.id)).length;
   const recipientCount = activePlayerCount + allyRecipientCount;
 
@@ -165,6 +180,7 @@ export function normalizeHitPointMode(mode: HitPointMode | undefined, hpOverride
   return mode === 'fixed' || mode === 'random' ? mode : 'average';
 }
 
+/** Разбирает запись вида 5d8+10 и бросает каждый куб; некорректная запись заменяется средним значением. */
 export function rollHitDiceExpression(expression: string, fallback: number, source: DieRollSource = randomDieRollSource): number {
   const normalized = expression.replace(/\s+/g, '');
   const match = normalized.match(/^(\d+)d(\d+)([+-]\d+)?$/i);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseNextDndMonster, parseNextDndSpell } from './ruleholderParser';
+import { parseNextDndMonster, parseNextDndSpell } from '../importers/nextDnd/parser';
 
 describe('parseNextDndMonster', () => {
   it('extracts next.dnd.su statblock fields and lair effects', () => {
