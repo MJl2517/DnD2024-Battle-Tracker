@@ -1,0 +1,9 @@
+node_modules
+out
+release
+coverage
+.electron-builder-cache
+secret
+serdtseglaz-pet
+package-lock.json
+docs/readme-landing.png

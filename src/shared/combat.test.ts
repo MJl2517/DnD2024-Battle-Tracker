@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assignTurnOrder,
   calculateExperience,
+  clampEncounterQuantity,
+  describeInitiativeMode,
+  getVisibleEffects,
   isBloodied,
+  normalizeGroupInput,
+  normalizeHitPointMode,
+  normalizeHp,
   rollHitDiceExpression,
   rollInitiative,
   rollInitiativeWithAdvantage,
@@ -31,10 +38,42 @@ describe('combat logic', () => {
     expect(result.map((item) => item.id)).toEqual(['fast', 'tie', 'slow']);
   });
 
+  it('assigns stable turn order after sorting', () => {
+    const result = assignTurnOrder([combatant({ id: 'second', initiative: 10, turnOrder: 4 }), combatant({ id: 'first', initiative: 20, turnOrder: 3 })]);
+    expect(result.map(({ id, turnOrder }) => ({ id, turnOrder }))).toEqual([
+      { id: 'first', turnOrder: 0 },
+      { id: 'second', turnOrder: 1 }
+    ]);
+  });
+
   it('marks a living creature as bloodied at half hp or below', () => {
     expect(isBloodied(10, 20)).toBe(true);
     expect(isBloodied(11, 20)).toBe(false);
     expect(isBloodied(0, 20)).toBe(false);
+  });
+
+  it('normalizes hp, encounter quantity and group modes', () => {
+    expect(normalizeHp(25.7, 20)).toBe(20);
+    expect(normalizeHp(Number.NaN, 20)).toBe(0);
+    expect(clampEncounterQuantity(120)).toBe(99);
+    expect(normalizeGroupInput({ quantity: 0, initiativeMode: 'individual' })).toEqual({ quantity: 1, initiativeMode: 'individual' });
+  });
+
+  it('normalizes and describes combat modes', () => {
+    expect(describeInitiativeMode('group')).toBe('Группой');
+    expect(describeInitiativeMode('individual')).toBe('Каждому отдельно');
+    expect(normalizeHitPointMode('random')).toBe('random');
+    expect(normalizeHitPointMode('average', 42)).toBe('fixed');
+    expect(normalizeHitPointMode(undefined)).toBe('average');
+  });
+
+  it('returns only public effects', () => {
+    expect(
+      getVisibleEffects([
+        { id: 'public', label: 'Public', public: true },
+        { id: 'private', label: 'Private', public: false }
+      ])
+    ).toEqual([{ id: 'public', label: 'Public', public: true }]);
   });
 
   it('rolls hit dice expressions with modifiers', () => {

@@ -55,9 +55,10 @@ npm.cmd run dev
 ## Проверки
 
 ```powershell
-npm.cmd run typecheck
-npm.cmd run test
+npm.cmd run check
 ```
+
+Отдельно доступны `typecheck`, `lint`, `format:check`, `test`, `test:coverage` и `test:e2e`. Архитектура проекта описана в [ARCHITECTURE.md](ARCHITECTURE.md), правила внесения изменений — в [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Сборка
 

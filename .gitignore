@@ -9,6 +9,8 @@ dist/
 .cache/
 .electron-builder-cache/
 coverage/
+test-results/
+playwright-report/
 
 # Local data and databases
 *.sqlite

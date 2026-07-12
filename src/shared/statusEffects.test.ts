@@ -12,18 +12,12 @@ import type { CombatEffect } from './types';
 
 describe('status effects', () => {
   it('expands unconscious into its dependent statuses', () => {
-    expect(expandStatusEffectIds(UNCONSCIOUS_STATUS_ID)).toEqual([
-      UNCONSCIOUS_STATUS_ID,
-      INCAPACITATED_STATUS_ID,
-      PRONE_STATUS_ID
-    ]);
+    expect(expandStatusEffectIds(UNCONSCIOUS_STATUS_ID)).toEqual([UNCONSCIOUS_STATUS_ID, INCAPACITATED_STATUS_ID, PRONE_STATUS_ID]);
   });
 
   it('adds defeated statuses without duplicating existing effects', () => {
     let counter = 0;
-    const effects: CombatEffect[] = [
-      { id: 'existing-prone', label: 'Prone', public: true, statusId: PRONE_STATUS_ID }
-    ];
+    const effects: CombatEffect[] = [{ id: 'existing-prone', label: 'Prone', public: true, statusId: PRONE_STATUS_ID }];
 
     const nextEffects = addStatusEffects(effects, UNCONSCIOUS_DEPENDENCY_STATUS_IDS, () => `effect-${++counter}`);
 
