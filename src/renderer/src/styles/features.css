@@ -14,6 +14,29 @@
 
 .encounter-layout {
   grid-template-columns: 360px 1fr;
+  align-items: stretch;
+  height: calc(100vh - 184px);
+  min-height: 0;
+}
+
+.encounter-layout > .panel {
+  min-height: 0;
+  overflow: auto;
+}
+
+.encounter-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky, 20);
+  margin: -22px -22px 22px;
+  padding: 22px 22px 1px;
+  background: rgb(29, 24, 19);
+  border-bottom: 1px solid rgba(244, 218, 171, 0.18);
+  box-shadow: 0 16px 24px rgba(10, 8, 6, 0.22);
+}
+
+.encounter-sticky-header .encounter-difficulty-panel {
+  margin-bottom: 16px;
 }
 
 .panel,
@@ -475,6 +498,16 @@
 
   .difficulty-scale > span {
     font-size: 0;
+  }
+}
+
+@media (max-width: 1180px) {
+  .encounter-layout {
+    height: auto;
+  }
+
+  .encounter-layout > .panel {
+    overflow: visible;
   }
 }
 

@@ -189,20 +189,22 @@ export function EncounterBuilder({
 
   return (
     <>
-      <div className="panel-title split">
-        <div>
-          <h2>{encounter.name}</h2>
-          <p>{encounter.groups.length} групп NPC</p>
+      <div className="encounter-sticky-header">
+        <div className="panel-title split">
+          <div>
+            <h2>{encounter.name}</h2>
+            <p>{encounter.groups.length} групп NPC</p>
+          </div>
+          <div className="toolbar-actions">
+            <HoldDeleteButton label="Удалить энкаунтер" disabled={busy} onConfirm={onDelete} />
+            <button className="button primary" type="button" disabled={busy || !encounter.groups.length} onClick={() => void onStart()}>
+              <Play size={20} />
+              Начать бой
+            </button>
+          </div>
         </div>
-        <div className="toolbar-actions">
-          <HoldDeleteButton label="Удалить энкаунтер" disabled={busy} onConfirm={onDelete} />
-          <button className="button primary" type="button" disabled={busy || !encounter.groups.length} onClick={() => void onStart()}>
-            <Play size={20} />
-            Начать бой
-          </button>
-        </div>
+        <EncounterDifficultyScale result={difficulty} />
       </div>
-      <EncounterDifficultyScale result={difficulty} />
       <form className="form-grid" onSubmit={(event) => void addGroup(event)}>
         <label className="wide">
           NPC

@@ -95,6 +95,29 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
 
   await page.reload();
   await expect(page.getByRole('button', { name: 'Экран игроков' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Энкаунтеры', exact: true }).click();
+  const encounterPanel = page.locator('.encounter-layout > .panel').nth(1);
+  const stickyHeader = encounterPanel.locator('.encounter-sticky-header');
+  const initialHeaderBox = await stickyHeader.boundingBox();
+  if (!initialHeaderBox) throw new Error('Не удалось определить положение закреплённого блока энкаунтера.');
+
+  await encounterPanel.evaluate((panel) => {
+    const filler = document.createElement('div');
+    filler.dataset.e2eScrollFiller = 'true';
+    filler.style.height = '1600px';
+    panel.append(filler);
+    panel.scrollTop = panel.scrollHeight;
+  });
+  await expect.poll(async () => Math.round((await stickyHeader.boundingBox())?.y ?? -1)).toBe(Math.round(initialHeaderBox.y));
+  await expect(stickyHeader.getByRole('button', { name: 'Начать бой' })).toBeVisible();
+  await expect(stickyHeader.getByText('Оценка сложности', { exact: true })).toBeVisible();
+  await encounterPanel.evaluate((panel) => {
+    panel.querySelector('[data-e2e-scroll-filler]')?.remove();
+    panel.scrollTop = 0;
+  });
+  await page.getByRole('button', { name: 'Бой', exact: true }).click();
+
   const playerWindowPromise = app.waitForEvent('window');
   await page.getByRole('button', { name: 'Экран игроков' }).click();
   const playerPage = await playerWindowPromise;

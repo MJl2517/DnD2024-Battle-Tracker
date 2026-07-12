@@ -11,6 +11,7 @@
   --color-danger: #8d3028;
   --color-success: #2c6558;
   --control-radius: 6px;
+  --z-sticky: 20;
   --popover-layer: 1001;
   --modal-layer: 1200;
   --motion-fast: 160ms;
