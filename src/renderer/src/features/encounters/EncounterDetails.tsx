@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { Dices, Edit3, Info, Save, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Dices, Edit3, Info, Save, X } from 'lucide-react';
 import type { EncounterLair } from '@shared/types';
 import type { EncounterDifficultyResult } from '@shared/encounterDifficulty';
 import { normalizeSignedInput, readNumber, readSignedNumber, signed } from '../../shared/lib/numbers';
@@ -8,6 +8,8 @@ import { FeatureListEditor, StatEditorSection } from '../bestiary/BestiaryPanel'
 
 const api = window.dndTracker;
 export function EncounterDifficultyScale({ result }: { result: EncounterDifficultyResult }): JSX.Element {
+  const [collapsed, setCollapsed] = useState(false);
+
   if (!result.ok) {
     return (
       <section className="encounter-difficulty-panel unavailable">
@@ -29,6 +31,23 @@ export function EncounterDifficultyScale({ result }: { result: EncounterDifficul
   const markerPosition = Math.min(100, (result.enemyXp / scaleMaximum) * 100);
   const columns = [low.xp, medium.xp - low.xp, high.xp - medium.xp, scaleMaximum - high.xp].map((value) => `${Math.max(1, value)}fr`).join(' ');
 
+  if (collapsed) {
+    return (
+      <section className={`encounter-difficulty-panel collapsed ${result.difficulty}`}>
+        <DifficultyScaleBar columns={columns} low={low} medium={medium} high={high} markerPosition={markerPosition} enemyXp={result.enemyXp} />
+        <button
+          className="difficulty-collapse-button"
+          type="button"
+          aria-label="Развернуть оценку сложности"
+          title="Развернуть оценку сложности"
+          onClick={() => setCollapsed(false)}
+        >
+          <ChevronDown size={20} />
+        </button>
+      </section>
+    );
+  }
+
   return (
     <section className={`encounter-difficulty-panel ${result.difficulty}`}>
       <div className="encounter-difficulty-heading">
@@ -36,7 +55,18 @@ export function EncounterDifficultyScale({ result }: { result: EncounterDifficul
           <span className="eyebrow">Оценка сложности</span>
           <h3>{result.difficultyLabel}</h3>
         </div>
-        <span className={`difficulty-result-badge ${result.difficulty}`}>{result.enemyXp.toLocaleString('ru-RU')} XP врагов</span>
+        <div className="encounter-difficulty-heading-actions">
+          <span className={`difficulty-result-badge ${result.difficulty}`}>{result.enemyXp.toLocaleString('ru-RU')} XP врагов</span>
+          <button
+            className="difficulty-collapse-button"
+            type="button"
+            aria-label="Свернуть оценку сложности"
+            title="Показывать только полосу сложности"
+            onClick={() => setCollapsed(true)}
+          >
+            <ChevronUp size={20} />
+          </button>
+        </div>
       </div>
 
       <div className="encounter-difficulty-party">
@@ -48,25 +78,7 @@ export function EncounterDifficultyScale({ result }: { result: EncounterDifficul
         </span>
       </div>
 
-      <div className="difficulty-scale-wrap">
-        <div className="difficulty-scale" style={{ gridTemplateColumns: columns }}>
-          <span className="below" title="Ниже бюджета низкой сложности">
-            Ниже
-          </span>
-          <span className="low" title={low.description}>
-            Низкая
-          </span>
-          <span className="medium" title={medium.description}>
-            Средняя
-          </span>
-          <span className="high" title={high.description}>
-            Высокая+
-          </span>
-        </div>
-        <span className="difficulty-scale-marker" style={{ left: `${markerPosition}%` }} title={`Текущая сцена: ${result.enemyXp.toLocaleString('ru-RU')} XP`}>
-          <span />
-        </span>
-      </div>
+      <DifficultyScaleBar columns={columns} low={low} medium={medium} high={high} markerPosition={markerPosition} enemyXp={result.enemyXp} />
 
       <div className="difficulty-budget-grid">
         {result.budgets.map((budget) => (
@@ -86,6 +98,45 @@ export function EncounterDifficultyScale({ result }: { result: EncounterDifficul
         </div>
       )}
     </section>
+  );
+}
+
+/** Общая цветная полоса используется в полном и компактном режимах без расхождения расчётов. */
+function DifficultyScaleBar({
+  columns,
+  low,
+  medium,
+  high,
+  markerPosition,
+  enemyXp
+}: {
+  columns: string;
+  low: EncounterDifficultyResult['budgets'][number];
+  medium: EncounterDifficultyResult['budgets'][number];
+  high: EncounterDifficultyResult['budgets'][number];
+  markerPosition: number;
+  enemyXp: number;
+}): JSX.Element {
+  return (
+    <div className="difficulty-scale-wrap">
+      <div className="difficulty-scale" style={{ gridTemplateColumns: columns }}>
+        <span className="below" title="Ниже бюджета низкой сложности">
+          Ниже
+        </span>
+        <span className="low" title={low.description}>
+          Низкая
+        </span>
+        <span className="medium" title={medium.description}>
+          Средняя
+        </span>
+        <span className="high" title={high.description}>
+          Высокая+
+        </span>
+      </div>
+      <span className="difficulty-scale-marker" style={{ left: `${markerPosition}%` }} title={`Текущая сцена: ${enemyXp.toLocaleString('ru-RU')} XP`}>
+        <span />
+      </span>
+    </div>
   );
 }
 
