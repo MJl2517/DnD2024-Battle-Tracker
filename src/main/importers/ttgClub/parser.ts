@@ -1,6 +1,7 @@
 import { load } from 'cheerio';
 import { z } from 'zod';
 import type { AbilityBlock, CreatureFeature, SavingThrowBlock, SpellCard } from '@shared/types';
+import { normalizeConditionImmunities } from '@shared/conditionNames';
 import {
   escapeAttribute,
   escapeHtml,
@@ -57,7 +58,7 @@ export function parseTtgClubMonster(html: string, sourceUrl: string): ParsedCrea
     vulnerabilities: normalizeText(String(data.vulnerability ?? '')),
     resistances: normalizeText(String(data.resistance ?? '')),
     immunities: damage,
-    conditionImmunities: conditions,
+    conditionImmunities: normalizeConditionImmunities(conditions),
     senses: normalizeText(String(data.sense ?? '')),
     languages: normalizeText(String(data.languages ?? '')),
     challengeRating: challenge.challengeRating,

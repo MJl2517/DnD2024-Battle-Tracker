@@ -18,6 +18,7 @@ import type {
   SavingThrowBlock
 } from '@shared/types';
 import { extractLairEffects } from '../services/ruleholderParser';
+import { normalizeConditionImmunities } from '@shared/conditionNames';
 
 export type Row = Record<string, unknown>;
 
@@ -79,7 +80,7 @@ export function rowToCreature(row: Row): CreatureTemplate {
     vulnerabilities: String(row.vulnerabilities ?? ''),
     resistances: String(row.resistances ?? ''),
     immunities: String(row.immunities ?? ''),
-    conditionImmunities: String(row.condition_immunities ?? ''),
+    conditionImmunities: normalizeConditionImmunities(String(row.condition_immunities ?? '')),
     senses: String(row.senses ?? ''),
     languages: String(row.languages ?? ''),
     challengeRating: String(row.challenge_rating ?? ''),
@@ -208,6 +209,15 @@ export function rollPreparedInitiative(modifier: number, advantage: boolean, dis
 
 /** Преобразует плоскую SQLite-строку в доменную модель и восстанавливает JSON-поля. */
 export function rowToCombatant(row: Row): Combatant {
+  const storedSnapshot = parseJson<Combatant['snapshot']>(row.snapshot_json, null);
+  const snapshot =
+    storedSnapshot && 'conditionImmunities' in storedSnapshot
+      ? {
+          ...storedSnapshot,
+          conditionImmunities: normalizeConditionImmunities(storedSnapshot.conditionImmunities)
+        }
+      : storedSnapshot;
+
   return {
     id: String(row.id),
     sessionId: String(row.session_id),
@@ -232,7 +242,7 @@ export function rowToCombatant(row: Row): Combatant {
     effects: parseJson<CombatEffect[]>(row.effects_json, []),
     publicNotes: String(row.public_notes ?? ''),
     publicNameVisible: Boolean(row.public_name_visible ?? row.side === 'player'),
-    snapshot: parseJson<Combatant['snapshot']>(row.snapshot_json, null),
+    snapshot,
     defeated: Boolean(row.defeated),
     escaped: Boolean(row.escaped),
     visible: Boolean(row.visible)

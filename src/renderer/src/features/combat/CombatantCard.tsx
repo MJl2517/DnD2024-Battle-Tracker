@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, Clock, Eye, EyeOff, HeartPulse, Info, LogOut, Plus, Shield, Skull } from 'lucide-react';
 import type { CombatEffect, Combatant, CombatantPatch, CreatureTemplate, EncounterLair } from '@shared/types';
 import { isBloodied } from '@shared/combat';
+import { getConditionImmunityStatusIds } from '@shared/conditionNames';
 import {
   CONCENTRATION_STATUS_ID,
   UNCONSCIOUS_DEPENDENCY_STATUS_IDS,
@@ -109,6 +110,7 @@ export function CombatantCard({
   const [collapsed, setCollapsed] = useState(combatant.defeated || combatant.escaped);
   const previousTerminalStateRef = useRef(combatant.defeated || combatant.escaped);
   const creatureSnapshot = combatant.snapshot && isCreatureSnapshot(combatant.snapshot) ? combatant.snapshot : null;
+  const immuneStatusIds = getConditionImmunityStatusIds(creatureSnapshot?.conditionImmunities ?? '');
   const lairSnapshot = combatant.snapshot && isLairSnapshot(combatant.snapshot) ? combatant.snapshot : combatantToLairFallback(combatant);
   const isLairCombatant = Boolean(lairSnapshot);
   const bloodied = isBloodied(combatant.currentHp, combatant.maxHp);
@@ -125,7 +127,7 @@ export function CombatantCard({
   }
 
   function addStatusEffect(statusId: string): void {
-    const nextEffects = addStatusEffects(combatant.effects, expandStatusEffectIds(statusId), clientId);
+    const nextEffects = addStatusEffects(combatant.effects, expandStatusEffectIds(statusId), clientId, immuneStatusIds);
     if (nextEffects.length === combatant.effects.length) return;
     onEffects(nextEffects);
   }
@@ -136,7 +138,7 @@ export function CombatantCard({
       return;
     }
 
-    const nextEffects = addStatusEffects(combatant.effects, UNCONSCIOUS_DEPENDENCY_STATUS_IDS, clientId);
+    const nextEffects = addStatusEffects(combatant.effects, UNCONSCIOUS_DEPENDENCY_STATUS_IDS, clientId, immuneStatusIds);
     if (nextEffects.length !== combatant.effects.length) onEffects(nextEffects);
     onDefeated(true);
   }
@@ -453,7 +455,9 @@ export function CombatantCard({
                     value: status.id,
                     label: status.label,
                     description: status.originalName,
-                    icon: status.icon
+                    icon: status.icon,
+                    disabled: immuneStatusIds.has(status.id),
+                    disabledReason: immuneStatusIds.has(status.id) ? 'Невосприимчивость к состоянию' : undefined
                   }))}
                   placeholder="Выберите состояние"
                   ariaLabel="Выбрать эффект"

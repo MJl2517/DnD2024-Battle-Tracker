@@ -33,4 +33,10 @@ describe('status effects', () => {
 
     expect(removeStatusEffects(effects, ['concentrating'])).toEqual([{ id: 'custom', label: 'Custom', public: true }]);
   });
+
+  it('does not add conditions blocked by immunity', () => {
+    const nextEffects = addStatusEffects([], UNCONSCIOUS_DEPENDENCY_STATUS_IDS, () => 'effect', new Set([PRONE_STATUS_ID]));
+
+    expect(nextEffects.map((effect) => effect.statusId)).toEqual([UNCONSCIOUS_STATUS_ID, INCAPACITATED_STATUS_ID]);
+  });
 });

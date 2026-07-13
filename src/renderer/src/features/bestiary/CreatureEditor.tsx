@@ -162,11 +162,19 @@ export function CreatureEditor({
                 />
               </label>
               <label className="wide">
-                Невосприимчивость
+                Невосприимчивость к урону
                 <input
                   value={draft.immunities}
                   onChange={(event) => onDraft({ ...draft, immunities: event.target.value })}
-                  placeholder="Через запятую: Огонь, Яд; состояние Отравленный"
+                  placeholder="Через запятую: Кислота, Огонь, Яд"
+                />
+              </label>
+              <label className="wide">
+                Невосприимчивость к состояниям
+                <input
+                  value={draft.conditionImmunities}
+                  onChange={(event) => onDraft({ ...draft, conditionImmunities: event.target.value })}
+                  placeholder="Через запятую: Глухота, Испуг, Обворожение, Слепота"
                 />
               </label>
             </div>

@@ -4,6 +4,7 @@ import { DEFAULT_PUBLIC_DISPLAY_SETTINGS, type PublicCombatant, type PublicComba
 import { InlineEmpty } from '../../shared/ui/PanelTitle';
 import { StatusEffectChip } from '../../shared/ui/StatusEffectChip';
 import { isConcentrating } from '../../shared/lib/combatEffects';
+import { getUserFacingErrorMessage } from '../../shared/lib/errors';
 import { XpAwardModal } from '../../shared/ui/XpAwardModal';
 import { formatHitPoints } from '../combat/model/hitPoints';
 import { PublicFeatureCardOverlay } from './PublicFeatureCardOverlay';
@@ -53,7 +54,7 @@ export function PlayerDisplay(): JSX.Element {
     try {
       await api.swapCombatInitiative(prompt.sessionId, prompt.sourceCombatantId, targetCombatantId);
     } catch (error) {
-      setExchangeError(error instanceof Error ? error.message : String(error));
+      setExchangeError(getUserFacingErrorMessage(error));
     } finally {
       setExchangeBusy(false);
     }

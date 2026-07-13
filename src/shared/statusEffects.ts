@@ -174,11 +174,17 @@ export function expandStatusEffectIds(statusId: string): readonly string[] {
 }
 
 /** Добавляет состояния без дублей и сохраняет пользовательские эффекты, уже находящиеся на карточке. */
-export function addStatusEffects(effects: CombatEffect[], statusIds: readonly string[], createId: () => string): CombatEffect[] {
+export function addStatusEffects(
+  effects: CombatEffect[],
+  statusIds: readonly string[],
+  createId: () => string,
+  immuneStatusIds: ReadonlySet<string> = new Set()
+): CombatEffect[] {
   const nextEffects = [...effects];
   const existingStatusIds = new Set(nextEffects.map((effect) => effect.statusId).filter(Boolean));
 
   for (const statusId of statusIds) {
+    if (immuneStatusIds.has(statusId)) continue;
     if (existingStatusIds.has(statusId)) continue;
     const status = getStatusEffectDefinition(statusId);
     if (!status) continue;

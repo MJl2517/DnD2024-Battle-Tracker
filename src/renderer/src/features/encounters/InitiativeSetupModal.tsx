@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Dices, Play, RefreshCw, X } from 'lucide-react';
+import { CircleAlert, Dices, Play, RefreshCw, X } from 'lucide-react';
 import { INCAPACITATED_STATUS_ID } from '@shared/statusEffects';
 import type { CombatInitiativeEntry, CombatSession, Combatant, EncounterLair, InitiativeExchangePrompt } from '@shared/types';
 import { readNumber, signed } from '../../shared/lib/numbers';
+import { getUserFacingErrorMessage } from '../../shared/lib/errors';
 import { InitiativeExchangeModal } from '../combat/InitiativeExchangeModal';
 
 const api = window.dndTracker;
@@ -18,6 +19,12 @@ function hasAlertSwap(combatant: Combatant): boolean {
 
 function isIncapacitated(combatant: Combatant): boolean {
   return combatant.effects.some((effect) => effect.statusId === INCAPACITATED_STATUS_ID);
+}
+
+function getExchangeCandidates(session: CombatSession, sourceCombatantId: string): Combatant[] {
+  return session.combatants.filter(
+    (combatant) => combatant.id !== sourceCombatantId && (combatant.side === 'player' || combatant.isAlly) && !combatant.defeated && !isIncapacitated(combatant)
+  );
 }
 
 function clampRoll(value: number): number {
@@ -80,6 +87,12 @@ export function InitiativeSetupModal({
     setExchangeSourceId(null);
   }, [initial, session]);
 
+  useEffect(() => {
+    if (!exchangeError) return undefined;
+    const timeout = window.setTimeout(() => setExchangeError(''), 6000);
+    return () => window.clearTimeout(timeout);
+  }, [exchangeError]);
+
   useEffect(
     () =>
       api.onCombatPreparation((nextSession) => {
@@ -118,6 +131,11 @@ export function InitiativeSetupModal({
   }
 
   async function openExchange(sourceCombatantId: string): Promise<void> {
+    if (!getExchangeCandidates(displaySession, sourceCombatantId).length) {
+      setExchangeError('Для обмена нужен другой игрок или союзный NPC, который не побеждён и не имеет состояния «Недееспособный».');
+      return;
+    }
+
     try {
       setExchangeError('');
       const nextSession = await api.beginInitiativeExchange(displaySession.id, sourceCombatantId, entries());
@@ -128,7 +146,7 @@ export function InitiativeSetupModal({
       setOrderedIds(sortIds(nextSession, next.rolls, next.exchangedTotals));
       setExchangeSourceId(sourceCombatantId);
     } catch (error) {
-      setExchangeError(error instanceof Error ? error.message : String(error));
+      setExchangeError(getUserFacingErrorMessage(error));
     }
   }
 
@@ -144,7 +162,7 @@ export function InitiativeSetupModal({
       setOrderedIds(sortIds(nextSession, next.rolls, next.exchangedTotals));
       setExchangeSourceId(null);
     } catch (error) {
-      setExchangeError(error instanceof Error ? error.message : String(error));
+      setExchangeError(getUserFacingErrorMessage(error));
     }
   }
 
@@ -163,17 +181,13 @@ export function InitiativeSetupModal({
       sourceCombatantId: source.id,
       sourceName: source.name,
       sourceInitiative: source.initiative,
-      candidates: displaySession.combatants
-        .filter(
-          (combatant) => combatant.id !== source.id && (combatant.side === 'player' || combatant.isAlly) && !combatant.defeated && !isIncapacitated(combatant)
-        )
-        .map((combatant) => ({
-          combatantId: combatant.id,
-          name: combatant.name,
-          initiative: combatant.initiative,
-          side: combatant.side,
-          isAlly: combatant.isAlly
-        }))
+      candidates: getExchangeCandidates(displaySession, source.id).map((combatant) => ({
+        combatantId: combatant.id,
+        name: combatant.name,
+        initiative: combatant.initiative,
+        side: combatant.side,
+        isAlly: combatant.isAlly
+      }))
     };
   }, [combatantById, displaySession, exchangeSourceId]);
 
@@ -196,6 +210,7 @@ export function InitiativeSetupModal({
             const lair = isLair(combatant);
             const roll = rolls[combatant.id] ?? 1;
             const exchanged = exchangedTotals[combatant.id] !== undefined;
+            const hasExchangeCandidates = getExchangeCandidates(displaySession, combatant.id).length > 0;
             return (
               <article className={`initiative-setup-card ${exchanged ? 'exchanged' : ''}`} key={combatant.id}>
                 <strong className="initiative-order">{index + 1}</strong>
@@ -208,7 +223,13 @@ export function InitiativeSetupModal({
                     className="icon-button initiative-swap-button"
                     type="button"
                     disabled={busy || isIncapacitated(combatant) || combatant.initiativeSwapUsed}
-                    title={combatant.initiativeSwapUsed ? 'Обмен инициативой уже использован' : 'Бдительный: обменяться инициативой'}
+                    title={
+                      combatant.initiativeSwapUsed
+                        ? 'Обмен инициативой уже использован'
+                        : !hasExchangeCandidates
+                          ? 'Нет доступных союзников для обмена'
+                          : 'Бдительный: обменяться инициативой'
+                    }
                     aria-label={`${combatant.name}: обменяться инициативой`}
                     onClick={() => void openExchange(combatant.id)}
                   >
@@ -280,7 +301,15 @@ export function InitiativeSetupModal({
       {exchangePrompt && (
         <InitiativeExchangeModal prompt={exchangePrompt} busy={busy} onSelect={(targetId) => void swapWith(targetId)} onCancel={() => void cancelExchange()} />
       )}
-      {exchangeError && <div className="initiative-exchange-error">{exchangeError}</div>}
+      {exchangeError && (
+        <div className="initiative-exchange-error" role="status">
+          <CircleAlert size={20} />
+          <span>{exchangeError}</span>
+          <button type="button" onClick={() => setExchangeError('')} aria-label="Закрыть уведомление">
+            <X size={17} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

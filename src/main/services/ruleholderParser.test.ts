@@ -15,7 +15,7 @@ describe('parseRuleholderMonster', () => {
     expect(creature.hitDice).toBe('5d6');
     expect(creature.speeds).toBe('30 футов, полёт 30 футов');
     expect(creature.immunities).toBe('Огонь, Яд');
-    expect(creature.conditionImmunities).toBe('Отравление, Утомление');
+    expect(creature.conditionImmunities).toBe('Отравленный, Истощение');
     expect(creature.challengeRating).toBe('1/4');
     expect(creature.xp).toBe(50);
     expect(creature.proficiencyBonus).toBe(2);
@@ -39,6 +39,14 @@ describe('parseRuleholderMonster', () => {
     expect(creature.creatureType).toBe('Гуманоид, волшебник');
     expect(creature.alignment).toBe('Нейтральный');
   });
+
+  it('keeps damage and condition immunities in separate fields', () => {
+    const creature = parseRuleholderMonster(gelatinousCubeFixture, 'https://ruleholder.com/monsters/gelatinous-cube');
+
+    expect(creature.immunities).toBe('Кислота');
+    expect(creature.conditionImmunities).toBe('Оглохший, Испуганный, Очарованный, Опрокинутый, Ослеплённый, Истощение');
+  });
+
   it('extracts lair text from Ruleholder lore sections', () => {
     const creature = parseRuleholderMonster(lairFixture, 'https://ruleholder.com/monsters/adult-green-dragon');
 
@@ -131,6 +139,13 @@ const lairFixture = fixture.replace(
     </section>
   </body>`
 );
+
+const gelatinousCubeFixture = fixture
+  .replace('Паровой мефит / Steam Mephit', 'Желатиновый куб / Gelatinous Cube')
+  .replace('Steam Mephit', 'Gelatinous Cube')
+  .replace('Паровой мефит', 'Желатиновый куб')
+  .replace('<span>Огонь, Яд</span>', '<span>Кислота</span>')
+  .replace('<span>Отравление, Утомление</span>', '<span>Глухота, Испуг, Обворожение, Распластанность, Слепота, Утомление</span>');
 
 const spellcastingFixture = `
 <!doctype html>

@@ -129,7 +129,8 @@ export function StatblockPreview({ creature, campaignId }: { creature: CreatureT
       <div className="statblock-grid">
         <span>Скорость: {creature.speeds || '-'}</span>
         <span>Устойчивости: {creature.resistances || '-'}</span>
-        <span>Иммунитеты: {creature.immunities || '-'}</span>
+        <span>Невосприимчивость к урону: {creature.immunities || '-'}</span>
+        <span>Невосприимчивость к состояниям: {creature.conditionImmunities || '-'}</span>
         <span>Чувства: {creature.senses || '-'}</span>
       </div>
       <div className="feature-columns">

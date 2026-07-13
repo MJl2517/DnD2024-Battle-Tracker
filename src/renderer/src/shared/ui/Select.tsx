@@ -7,6 +7,8 @@ export type SelectOption = {
   label: string;
   description?: string;
   icon?: string;
+  disabled?: boolean;
+  disabledReason?: string;
 };
 
 /**
@@ -127,6 +129,9 @@ export function CustomSelect({
                   type="button"
                   role="option"
                   aria-selected={(selectedValues ?? [value]).includes(option.value)}
+                  aria-disabled={option.disabled}
+                  disabled={option.disabled}
+                  title={option.disabledReason}
                   key={option.value}
                   onPointerDown={(event) => {
                     event.preventDefault();
@@ -269,7 +274,7 @@ function CustomSelectOption({ option }: { option: SelectOption }): JSX.Element {
       {option.icon && <img src={option.icon} alt="" />}
       <span>
         <strong>{option.label}</strong>
-        {option.description && <small>{option.description}</small>}
+        {(option.disabledReason || option.description) && <small>{option.disabledReason || option.description}</small>}
       </span>
     </span>
   );

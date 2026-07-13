@@ -41,6 +41,7 @@ import type {
   PublicDisplaySettings,
   InitiativeExchangePrompt
 } from '@shared/types';
+import { getConditionImmunityStatusIds } from '@shared/conditionNames';
 
 /**
  * Хранилище активного боя и публичного представления.
@@ -466,7 +467,9 @@ export class CombatRepository {
     let currentHpForWrite: number | undefined;
     let maxHpForWrite: number | undefined;
     let temporaryHpForWrite: number | undefined;
-    let effectsForWrite: CombatEffect[] | undefined = patch.effects;
+    const snapshot = parseJson<Combatant['snapshot']>(current.snapshot_json, null);
+    const immuneStatusIds = getConditionImmunityStatusIds(snapshot && 'conditionImmunities' in snapshot ? snapshot.conditionImmunities : '');
+    let effectsForWrite: CombatEffect[] | undefined = patch.effects ? removeStatusEffects(patch.effects, [...immuneStatusIds]) : undefined;
 
     if (patch.armorClass !== undefined) set('armor_class', 'armorClass', clamp(Math.round(patch.armorClass), 0, 60));
     if (patch.maxHp !== undefined) {
@@ -506,7 +509,8 @@ export class CombatRepository {
       effectsForWrite = addStatusEffects(
         removeStatusEffects(effectsForWrite ?? parseJson<CombatEffect[]>(current.effects_json, []), [CONCENTRATION_STATUS_ID]),
         UNCONSCIOUS_DEPENDENCY_STATUS_IDS,
-        id
+        id,
+        immuneStatusIds
       );
     }
     if (currentHpForWrite !== undefined) set('current_hp', 'currentHp', currentHpForWrite);

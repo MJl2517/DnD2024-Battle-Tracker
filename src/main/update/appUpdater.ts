@@ -34,7 +34,10 @@ export function createAppUpdater(getMainWindow: () => BrowserWindow | null): App
   let eventsBound = false;
 
   autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = false;
+  // После успешной загрузки обычное закрытие приложения тоже должно установить обновление.
+  // Иначе подсказка о перезапуске вводит пользователя в заблуждение, а загруженный пакет остаётся только в кэше.
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoRunAppAfterInstall = true;
 
   function setStatus(patch: Partial<AppUpdateStatus>): AppUpdateStatus {
     status = { ...status, ...patch, currentVersion: app.getVersion() };
@@ -127,7 +130,7 @@ export function createAppUpdater(getMainWindow: () => BrowserWindow | null): App
         status: 'downloaded',
         percent: 100,
         canInstall: true,
-        message: 'Обновление скачано. Перезапустите приложение для установки.'
+        message: 'Обновление скачано. Нажмите «Установить и перезапустить» или закройте приложение — установка начнётся автоматически.'
       })
     );
     autoUpdater.on('error', (error) => setStatus({ status: 'error', message: describeError(error) }));
@@ -137,6 +140,7 @@ export function createAppUpdater(getMainWindow: () => BrowserWindow | null): App
     getStatus: () => status,
     check,
     download,
+    // Явная установка запускает обычный NSIS wizard и после него снова открывает приложение.
     install: () => autoUpdater.quitAndInstall(false, true),
     bindEvents
   };

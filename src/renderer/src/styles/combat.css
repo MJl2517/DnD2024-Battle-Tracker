@@ -871,11 +871,43 @@
   left: 50%;
   bottom: 24px;
   z-index: 1300;
-  padding: 12px 18px;
-  color: #fff;
-  background: #7e2a24;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(560px, calc(100vw - 32px));
+  padding: 13px 14px;
+  color: #fff3d6;
+  background: #3b2914;
+  border: 1px solid #b8802d;
   border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.52);
   transform: translateX(-50%);
+}
+
+.initiative-exchange-error > svg {
+  flex: 0 0 auto;
+  color: #f8d99a;
+}
+
+.initiative-exchange-error span {
+  flex: 1;
+  line-height: 1.35;
+}
+
+.initiative-exchange-error button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(248, 217, 154, 0.24);
+  border-radius: 6px;
+}
+
+.initiative-exchange-error button:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .initiative-modal-actions {

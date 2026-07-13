@@ -137,7 +137,7 @@ export function SettingsModal({
               {updateStatus?.status === 'downloaded' && (
                 <button className="button primary" type="button" disabled={updateBusy} onClick={() => void runUpdateAction(api.installUpdate)}>
                   <Play size={18} />
-                  Установить
+                  Установить и перезапустить
                 </button>
               )}
             </div>
@@ -184,7 +184,7 @@ function describeUpdateStatus(status: AppUpdateStatus | null): { title: string; 
   }
 
   if (status.status === 'downloaded') {
-    return { title: `Версия${targetVersion} готова`, message: message || 'Нажмите “Установить”, приложение перезапустится.' };
+    return { title: `Версия${targetVersion} готова`, message: message || 'Нажмите «Установить и перезапустить».' };
   }
 
   if (status.status === 'not-available') {

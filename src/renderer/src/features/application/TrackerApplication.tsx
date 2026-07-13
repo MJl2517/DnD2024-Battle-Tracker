@@ -7,6 +7,7 @@ import { LibraryPanel } from '../bestiary/BestiaryPanel';
 import { EncountersPanel } from '../encounters/EncountersPanel';
 import { SettingsModal } from '../settings/SettingsModal';
 import { CombatPanel } from '../combat/CombatPanel';
+import { getUserFacingErrorMessage } from '../../shared/lib/errors';
 export { PlayerDisplay } from '../player-display/PlayerDisplay';
 
 type TabKey = 'combat' | 'encounters' | 'library' | 'players';
@@ -57,7 +58,7 @@ export function MasterApp(): JSX.Element {
     try {
       return await work();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(getUserFacingErrorMessage(err));
       return undefined;
     } finally {
       setBusy(false);

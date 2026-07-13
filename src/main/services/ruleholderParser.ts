@@ -1,6 +1,7 @@
 import { load } from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import type { AbilityBlock, CreatureFeature, SaveCreatureTemplateInput, SavingThrowBlock, SpellCard } from '@shared/types';
+import { normalizeConditionImmunities } from '@shared/conditionNames';
 
 export type ParsedCreatureTemplate = Omit<SaveCreatureTemplateInput, 'campaignId'>;
 
@@ -69,7 +70,7 @@ export function parseRuleholderMonster(html: string, sourceUrl: string): ParsedC
     vulnerabilities: header.get('Уязвимость') ?? '',
     resistances: header.get('Устойчивость') ?? '',
     immunities: header.get('Невосприимчивость') ?? '',
-    conditionImmunities: header.get('Невосприимчивость к состояниям') ?? '',
+    conditionImmunities: normalizeConditionImmunities(header.get('Невосприимчивость к состояниям') ?? ''),
     senses: header.get('Восприятие') ?? header.get('Чувства') ?? '',
     languages: header.get('Языки') ?? '',
     challengeRating,

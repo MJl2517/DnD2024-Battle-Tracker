@@ -1,6 +1,6 @@
 {
   "name": "dnd-2024-battle-tracker",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Desktop initiative and HP tracker for DnD 2024 encounters.",
   "private": true,
   "main": "out/main/index.js",

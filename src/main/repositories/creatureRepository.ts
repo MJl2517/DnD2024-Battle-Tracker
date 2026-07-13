@@ -1,4 +1,5 @@
 import type { AbilityBlock, CreatureTemplate, SaveCreatureTemplateInput } from '@shared/types';
+import { normalizeConditionImmunities } from '@shared/conditionNames';
 import type { AppDatabase } from '../services/db';
 import { clamp, id, now, rowToCreature, toCreatureParams, touchCampaign, type Row } from './repositoryUtils';
 
@@ -25,6 +26,7 @@ export class CreatureRepository {
       savingThrows: input.savingThrows ?? {},
       traits: input.traits ?? [],
       actions: input.actions ?? [],
+      conditionImmunities: normalizeConditionImmunities(input.conditionImmunities ?? ''),
       lairName: input.lairName?.trim() ?? '',
       lairDescription: input.lairDescription ?? '',
       lairHtml: input.lairHtml ?? '',

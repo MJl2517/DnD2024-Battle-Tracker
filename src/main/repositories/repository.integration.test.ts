@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type { AppDatabase } from '../services/db';
 import { openAppDatabase, openMemoryDatabase } from '../services/db';
 import { TrackerRepository } from '../services/repository';
+import { INCAPACITATED_STATUS_ID, PRONE_STATUS_ID, UNCONSCIOUS_STATUS_ID } from '@shared/statusEffects';
 
 let database: AppDatabase | null = null;
 let temporaryDirectory = '';
@@ -106,6 +107,37 @@ describe('TrackerRepository integration', () => {
     expect(tables.map((table) => table.name)).toEqual(
       expect.arrayContaining(['campaigns', 'player_characters', 'creature_templates', 'encounters', 'combat_sessions', 'combatants'])
     );
+  });
+
+  it('does not assign immune conditions manually or after defeat', () => {
+    database = openMemoryDatabase();
+    const repository = new TrackerRepository(database);
+    const campaign = repository.createCampaign({ name: 'Condition immunity campaign' });
+    const creature = repository.saveCreature({
+      ...creatureInput(campaign.id),
+      conditionImmunities: 'Распластанность'
+    });
+    const encounter = repository.saveEncounter({ campaignId: campaign.id, name: 'Condition immunity encounter' });
+    repository.saveEncounterGroup({
+      encounterId: encounter.id,
+      templateId: creature.id,
+      quantity: 1,
+      initiativeMode: 'individual'
+    });
+
+    const preparation = repository.prepareCombat(encounter.id);
+    const enemy = preparation.combatants.find((combatant) => combatant.templateId === creature.id)!;
+    const updated = repository.updateCombatant(enemy.id, {
+      currentHp: 0,
+      defeated: true,
+      effects: [{ id: 'attempted-prone', label: 'Опрокинутый', public: true, statusId: PRONE_STATUS_ID }]
+    });
+    const defeatedEnemy = updated.combatants.find((combatant) => combatant.id === enemy.id)!;
+    const statusIds = defeatedEnemy.effects.map((effect) => effect.statusId);
+
+    expect(statusIds).toContain(UNCONSCIOUS_STATUS_ID);
+    expect(statusIds).toContain(INCAPACITATED_STATUS_ID);
+    expect(statusIds).not.toContain(PRONE_STATUS_ID);
   });
 
   it('exchanges Alert initiative only with a player or allied NPC during preparation', () => {

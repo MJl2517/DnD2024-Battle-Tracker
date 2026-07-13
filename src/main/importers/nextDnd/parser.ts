@@ -1,6 +1,7 @@
 import { load } from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import type { AbilityBlock, CreatureFeature, SavingThrowBlock, SpellCard } from '@shared/types';
+import { normalizeConditionImmunities } from '@shared/conditionNames';
 import {
   cleanElementText,
   escapeAttribute,
@@ -85,7 +86,7 @@ export function parseNextDndMonster(html: string, sourceUrl: string): ParsedCrea
     vulnerabilities: params.get('Уязвимости') ?? '',
     resistances: params.get('Сопротивления') ?? params.get('Устойчивости') ?? '',
     immunities: immunities.damage || params.get('Невосприимчивость') || '',
-    conditionImmunities: immunities.conditions || params.get('Иммунитеты к состояниям') || '',
+    conditionImmunities: normalizeConditionImmunities(immunities.conditions || params.get('Иммунитеты к состояниям') || ''),
     senses: params.get('Чувства') ?? params.get('Восприятие') ?? '',
     languages: params.get('Языки') ?? '',
     challengeRating: challenge.challengeRating,
