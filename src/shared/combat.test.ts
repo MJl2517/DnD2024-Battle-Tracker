@@ -12,6 +12,7 @@ import {
   rollHitDiceExpression,
   rollInitiative,
   rollInitiativeWithAdvantage,
+  rollInitiativeWithDisadvantage,
   sortCombatants,
   tickTimedEffects,
   toPublicCombatants
@@ -26,6 +27,11 @@ describe('combat logic', () => {
   it('rolls initiative with advantage as the best of two d20 rolls', () => {
     const rolls = [4, 16];
     expect(rollInitiativeWithAdvantage(2, { d20: () => rolls.shift() ?? 1 })).toBe(18);
+  });
+
+  it('rolls initiative with disadvantage as the worst of two d20 rolls', () => {
+    const rolls = [16, 4];
+    expect(rollInitiativeWithDisadvantage(2, { d20: () => rolls.shift() ?? 1 })).toBe(6);
   });
 
   it('sorts by initiative, modifier, then turn order', () => {
@@ -281,6 +287,7 @@ function player(overrides: Partial<PlayerCharacter>): PlayerCharacter {
     notes: '',
     createdAt: timestamp,
     updatedAt: timestamp,
-    ...overrides
+    ...overrides,
+    alertInitiativeSwap: overrides.alertInitiativeSwap ?? false
   };
 }

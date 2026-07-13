@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { app, BrowserWindow, shell } from 'electron';
-import type { PublicCombatView } from '@shared/types';
+import type { CombatSession, PublicCombatView } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc/channels';
 
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -91,6 +91,12 @@ export class WindowManager {
   broadcastPlayerView(view: PublicCombatView): void {
     if (!this.playerWindow || this.playerWindow.isDestroyed()) return;
     this.playerWindow.webContents.send(IPC_CHANNELS.playerWindow.viewEvent, view);
+  }
+
+  /** Синхронизирует мастерскую модалку, когда выбор на втором экране изменил подготовленную инициативу. */
+  broadcastCombatPreparation(session: CombatSession | null): void {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    this.mainWindow.webContents.send(IPC_CHANNELS.combat.preparationEvent, session);
   }
 
   private get appIconPath(): string {

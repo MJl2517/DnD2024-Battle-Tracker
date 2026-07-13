@@ -85,13 +85,7 @@ export function EncountersPanel({
               setSelectedId('');
               await onRefresh();
             }}
-            onStart={async () => {
-              const session = await run(() => api.startCombat(selected.id));
-              if (session) {
-                await onRefresh();
-                onStart();
-              }
-            }}
+            onStart={onStart}
           />
         ) : (
           <InlineEmpty title="Создайте энкаунтер" />

@@ -16,6 +16,7 @@ describe('calculateEncounterDifficulty', () => {
     expect(result.budgets.map((budget) => budget.xp)).toEqual([300, 450, 800]);
     expect(result.difficulty).toBe('medium');
     expect(result.hasAllies).toBe(true);
+    expect(result.powerfulCreatureCount).toBe(0);
   });
 
   it('falls back to challenge rating xp when imported xp is missing', () => {
@@ -24,6 +25,21 @@ describe('calculateEncounterDifficulty', () => {
     expect(result.enemyXp).toBe(50);
     expect(result.difficulty).toBe('low');
     expect(result.missingXpGroups).toBe(0);
+    expect(result.zeroChallengeCreatureCount).toBe(0);
+  });
+
+  it('detects zero xp creatures, excessive statblocks and creatures above character level', () => {
+    const result = calculateEncounterDifficulty(
+      [player('p1', 1), player('p2', 3)],
+      [],
+      [group('zero', 4, false), group('ogre', 1, false), group('hound', 1, false), group('cultist', 1, false)],
+      [creature('zero', 0, '0'), creature('ogre', 450, '2'), creature('hound', 100, '1/2'), creature('cultist', 25, '1/8')]
+    );
+
+    expect(result.zeroChallengeCreatureCount).toBe(4);
+    expect(result.uniqueStatblockCount).toBe(4);
+    expect(result.powerfulCreatureCount).toBe(1);
+    expect(result.hostileCreatureCount).toBe(7);
   });
 });
 
@@ -38,6 +54,7 @@ function player(id: string, level: number): PlayerCharacter {
     initiativeMod: 0,
     passivePerception: 10,
     active: true,
+    alertInitiativeSwap: false,
     imageUrl: '',
     notes: '',
     createdAt: '',
@@ -52,6 +69,7 @@ function setting(playerId: string, participating: boolean): EncounterPlayerSetti
     playerId,
     participating,
     initiativeAdvantage: false,
+    initiativeDisadvantage: false,
     initiativeOverride: null,
     createdAt: '',
     updatedAt: ''
@@ -67,6 +85,7 @@ function group(templateId: string, quantity: number, isAlly: boolean): Encounter
     quantity,
     initiativeMode: 'individual',
     initiativeAdvantage: false,
+    initiativeDisadvantage: false,
     initiativeOverride: null,
     hpMode: 'average',
     hpOverride: null,

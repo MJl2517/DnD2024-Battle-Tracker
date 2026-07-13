@@ -54,6 +54,7 @@ export function importPlayerFromLss(payload: unknown, campaignId: string): Playe
     initiativeMod: numberValue(fieldValue(vitality, 'initiative', stats.dex.modifier), stats.dex.modifier),
     passivePerception: skills.perception?.passive ?? 10 + stats.wis.modifier,
     active: true,
+    alertInitiativeSwap: false,
     imageUrl,
     notes: buildLssNotes(textSections),
     createdAt: timestamp,

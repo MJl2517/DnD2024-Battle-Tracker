@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc/channels';
 import type {
+  AddCombatantsToCombatInput,
   AppUpdateStatus,
+  CombatInitiativeEntry,
   CombatantPatch,
   CompleteCombatOptions,
   CreateCampaignInput,
@@ -36,6 +38,21 @@ const api: TrackerApi = {
   saveEncounterLair: (input: SaveEncounterLairInput) => ipcRenderer.invoke(IPC_CHANNELS.encounter.saveLair, input),
   deleteEncounterLair: (encounterId: string) => ipcRenderer.invoke(IPC_CHANNELS.encounter.deleteLair, encounterId),
   startCombat: (encounterId: string) => ipcRenderer.invoke(IPC_CHANNELS.combat.start, encounterId),
+  prepareCombat: (encounterId: string) => ipcRenderer.invoke(IPC_CHANNELS.combat.prepare, encounterId),
+  confirmCombatInitiative: (sessionId: string, entries: CombatInitiativeEntry[]) =>
+    ipcRenderer.invoke(IPC_CHANNELS.combat.confirmInitiative, sessionId, entries),
+  beginInitiativeExchange: (sessionId: string, sourceCombatantId: string, entries: CombatInitiativeEntry[]) =>
+    ipcRenderer.invoke(IPC_CHANNELS.combat.beginInitiativeExchange, sessionId, sourceCombatantId, entries),
+  swapCombatInitiative: (sessionId: string, sourceCombatantId: string, targetCombatantId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.combat.swapInitiative, sessionId, sourceCombatantId, targetCombatantId),
+  cancelInitiativeExchange: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.combat.cancelInitiativeExchange, sessionId),
+  onCombatPreparation: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, session: import('@shared/types').CombatSession | null): void => callback(session);
+    ipcRenderer.on(IPC_CHANNELS.combat.preparationEvent, listener);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.combat.preparationEvent, listener);
+  },
+  cancelCombatPreparation: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.combat.cancelPreparation, sessionId),
+  addCombatantsToCombat: (input: AddCombatantsToCombatInput) => ipcRenderer.invoke(IPC_CHANNELS.combat.addCombatants, input),
   getCombatSession: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.combat.get, sessionId),
   updateCombatant: (id: string, patch: CombatantPatch) => ipcRenderer.invoke(IPC_CHANNELS.combat.updateCombatant, id, patch),
   reorderCombatants: (sessionId: string, orderedIds: string[]) => ipcRenderer.invoke(IPC_CHANNELS.combat.reorderCombatants, sessionId, orderedIds),

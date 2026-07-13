@@ -36,6 +36,11 @@ export function rollInitiativeWithAdvantage(modifier: number, source: RollSource
   return Math.max(source.d20(), source.d20()) + modifier;
 }
 
+/** Бросок с помехой: бросаются два d20, к модификатору прибавляется худший результат. */
+export function rollInitiativeWithDisadvantage(modifier: number, source: RollSource = randomRollSource): number {
+  return Math.min(source.d20(), source.d20()) + modifier;
+}
+
 /** Возвращает признак «Окровавлен», не считая существ с нулевыми хитами. */
 export function isBloodied(currentHp: number, maxHp: number): boolean {
   return maxHp > 0 && currentHp > 0 && currentHp <= Math.floor(maxHp / 2);

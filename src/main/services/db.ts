@@ -69,6 +69,7 @@ function runMigrations(db: Database.Database): void {
       initiative_mod INTEGER NOT NULL,
       passive_perception INTEGER NOT NULL,
       active INTEGER NOT NULL,
+      alert_initiative_swap INTEGER NOT NULL DEFAULT 0,
       image_url TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
@@ -132,6 +133,7 @@ function runMigrations(db: Database.Database): void {
       quantity INTEGER NOT NULL,
       initiative_mode TEXT NOT NULL,
       initiative_advantage INTEGER NOT NULL DEFAULT 0,
+      initiative_disadvantage INTEGER NOT NULL DEFAULT 0,
       initiative_override INTEGER,
       hp_mode TEXT NOT NULL DEFAULT 'average',
       hp_override INTEGER,
@@ -146,6 +148,7 @@ function runMigrations(db: Database.Database): void {
       player_id TEXT NOT NULL REFERENCES player_characters(id) ON DELETE CASCADE,
       participating INTEGER NOT NULL DEFAULT 1,
       initiative_advantage INTEGER NOT NULL DEFAULT 0,
+      initiative_disadvantage INTEGER NOT NULL DEFAULT 0,
       initiative_override INTEGER,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -195,6 +198,8 @@ function runMigrations(db: Database.Database): void {
       current_hp INTEGER NOT NULL,
       temporary_hp INTEGER NOT NULL DEFAULT 0,
       initiative INTEGER NOT NULL,
+      initiative_roll INTEGER,
+      initiative_swap_used INTEGER NOT NULL DEFAULT 0,
       initiative_mod INTEGER NOT NULL,
       initiative_group_id TEXT,
       initiative_mode TEXT NOT NULL,
@@ -220,10 +225,13 @@ function runMigrations(db: Database.Database): void {
 
   addColumnIfMissing(db, 'encounter_creature_groups', 'hp_mode', "TEXT NOT NULL DEFAULT 'average'");
   addColumnIfMissing(db, 'encounter_creature_groups', 'initiative_advantage', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'encounter_creature_groups', 'initiative_disadvantage', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'encounter_creature_groups', 'initiative_override', 'INTEGER');
   addColumnIfMissing(db, 'encounter_creature_groups', 'is_ally', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'player_characters', 'image_url', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(db, 'player_characters', 'alert_initiative_swap', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'encounter_player_settings', 'participating', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfMissing(db, 'encounter_player_settings', 'initiative_disadvantage', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'creature_templates', 'token_url', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing(db, 'creature_templates', 'lair_name', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing(db, 'creature_templates', 'lair_description', "TEXT NOT NULL DEFAULT ''");
@@ -236,6 +244,8 @@ function runMigrations(db: Database.Database): void {
   addColumnIfMissing(db, 'combatants', 'temporary_hp', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'combatants', 'public_name_visible', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'combatants', 'is_ally', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'combatants', 'initiative_roll', 'INTEGER');
+  addColumnIfMissing(db, 'combatants', 'initiative_swap_used', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'combat_sessions', 'xp_ally_count', 'INTEGER NOT NULL DEFAULT 0');
   db.exec(`
     UPDATE combatants SET base_armor_class = armor_class WHERE base_armor_class = 0;

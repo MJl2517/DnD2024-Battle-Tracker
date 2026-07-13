@@ -10,6 +10,7 @@ export interface PlayerCharacter extends Timestamped {
   initiativeMod: number;
   passivePerception: number;
   active: boolean;
+  alertInitiativeSwap: boolean;
   imageUrl: string;
   notes: string;
 }
@@ -24,6 +25,7 @@ export interface SavePlayerInput {
   initiativeMod: number;
   passivePerception: number;
   active: boolean;
+  alertInitiativeSwap?: boolean;
   imageUrl?: string;
   notes?: string;
 }

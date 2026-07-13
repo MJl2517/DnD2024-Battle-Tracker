@@ -32,7 +32,8 @@ describe('LSS player importer', () => {
       maxHp: 43,
       initiativeMod: 4,
       imageUrl: 'https://example.com/lira.webp',
-      active: true
+      active: true,
+      alertInitiativeSwap: false
     });
   });
 

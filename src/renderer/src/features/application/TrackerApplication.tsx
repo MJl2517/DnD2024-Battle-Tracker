@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Activity, BookOpen, ChevronLeft, ChevronRight, MonitorUp, Settings, Swords, Users, X } from 'lucide-react';
-import type { Campaign, CampaignDetail, CompleteCombatResult } from '@shared/types';
+import { DEFAULT_PUBLIC_DISPLAY_SETTINGS, type Campaign, type CampaignDetail, type CompleteCombatResult, type PublicDisplaySettings } from '@shared/types';
 import { CampaignSwitcher, EmptyCampaignState, TabButton } from './CampaignNavigation';
 import { PlayersPanel } from '../players/PlayersPanel';
 import { LibraryPanel } from '../bestiary/BestiaryPanel';
@@ -27,6 +27,7 @@ export function MasterApp(): JSX.Element {
   const [xpResult, setXpResult] = useState<CompleteCombatResult | null>(null);
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [displaySettings, setDisplaySettings] = useState<PublicDisplaySettings>(DEFAULT_PUBLIC_DISPLAY_SETTINGS);
 
   async function loadCampaigns(preferredId?: string): Promise<void> {
     const nextCampaigns = await api.listCampaigns();
@@ -78,6 +79,7 @@ export function MasterApp(): JSX.Element {
 
   useEffect(() => {
     void run(() => loadCampaigns());
+    void api.getPublicDisplaySettings().then(setDisplaySettings);
     // Initial bootstrap only; later campaign changes go through explicit actions below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -147,7 +149,11 @@ export function MasterApp(): JSX.Element {
         </div>
       </aside>
 
-      <main className={`workspace ${tab === 'players' ? 'players-workspace' : tab === 'encounters' ? 'encounters-workspace' : ''}`}>
+      <main
+        className={`workspace ${
+          tab === 'players' ? 'players-workspace' : tab === 'encounters' ? 'encounters-workspace' : tab === 'combat' ? 'combat-workspace' : ''
+        }`}
+      >
         <header className="topbar">
           <div>
             <p className="eyebrow">Профиль кампании</p>
@@ -191,6 +197,7 @@ export function MasterApp(): JSX.Element {
               <CombatPanel
                 detail={detail}
                 busy={busy}
+                hideCreatureNames={displaySettings.hideCreatureNames}
                 xpResult={xpResult}
                 onSession={(session) => {
                   setDetail({ ...detail, activeSession: session });
@@ -211,7 +218,7 @@ export function MasterApp(): JSX.Element {
           </>
         )}
       </main>
-      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} onDisplaySettingsChange={setDisplaySettings} />}
     </div>
   );
 }

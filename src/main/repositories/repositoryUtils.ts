@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { AppDatabase } from '../services/db';
-import { normalizeHitPointMode, rollHitDiceExpression, rollInitiative, rollInitiativeWithAdvantage } from '@shared/combat';
+import { normalizeHitPointMode, rollHitDiceExpression, rollInitiative, rollInitiativeWithAdvantage, rollInitiativeWithDisadvantage } from '@shared/combat';
 import { DEFAULT_PUBLIC_DISPLAY_SETTINGS } from '@shared/types';
 import type {
   AbilityBlock,
@@ -50,6 +50,7 @@ export function rowToPlayer(row: Row): PlayerCharacter {
     initiativeMod: Number(row.initiative_mod),
     passivePerception: Number(row.passive_perception),
     active: Boolean(row.active),
+    alertInitiativeSwap: Boolean(row.alert_initiative_swap),
     imageUrl: String(row.image_url ?? ''),
     notes: String(row.notes ?? ''),
     createdAt: String(row.created_at),
@@ -122,6 +123,7 @@ export function rowToEncounterGroup(row: Row): EncounterCreatureGroup {
     quantity: Number(row.quantity),
     initiativeMode: row.initiative_mode === 'group' ? 'group' : 'individual',
     initiativeAdvantage: Boolean(row.initiative_advantage),
+    initiativeDisadvantage: Boolean(row.initiative_disadvantage),
     initiativeOverride: row.initiative_override == null ? null : Number(row.initiative_override),
     hpMode: normalizeHitPointMode(
       row.hp_mode === 'random' || row.hp_mode === 'fixed' ? row.hp_mode : 'average',
@@ -141,6 +143,7 @@ export function rowToEncounterPlayerSetting(row: Row): EncounterPlayerSetting {
     playerId: String(row.player_id),
     participating: row.participating == null ? true : Boolean(row.participating),
     initiativeAdvantage: Boolean(row.initiative_advantage),
+    initiativeDisadvantage: Boolean(row.initiative_disadvantage),
     initiativeOverride: row.initiative_override == null ? null : Number(row.initiative_override),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
@@ -169,6 +172,7 @@ export function toEncounterGroupParams(group: EncounterCreatureGroup): Record<st
   return {
     ...group,
     initiativeAdvantage: group.initiativeAdvantage ? 1 : 0,
+    initiativeDisadvantage: group.initiativeDisadvantage ? 1 : 0,
     isAlly: group.isAlly ? 1 : 0
   };
 }
@@ -177,7 +181,8 @@ export function toEncounterPlayerSettingParams(setting: EncounterPlayerSetting):
   return {
     ...setting,
     participating: setting.participating ? 1 : 0,
-    initiativeAdvantage: setting.initiativeAdvantage ? 1 : 0
+    initiativeAdvantage: setting.initiativeAdvantage ? 1 : 0,
+    initiativeDisadvantage: setting.initiativeDisadvantage ? 1 : 0
   };
 }
 
@@ -194,8 +199,11 @@ export function rollEncounterGroupHitPoints(group: EncounterCreatureGroup, templ
   return template.hitPoints;
 }
 
-export function rollPreparedInitiative(modifier: number, advantage: boolean): number {
-  return advantage ? rollInitiativeWithAdvantage(modifier) : rollInitiative(modifier);
+export function rollPreparedInitiative(modifier: number, advantage: boolean, disadvantage = false): number {
+  if (advantage && disadvantage) return rollInitiative(modifier);
+  if (advantage) return rollInitiativeWithAdvantage(modifier);
+  if (disadvantage) return rollInitiativeWithDisadvantage(modifier);
+  return rollInitiative(modifier);
 }
 
 /** Преобразует плоскую SQLite-строку в доменную модель и восстанавливает JSON-поля. */
@@ -215,6 +223,8 @@ export function rowToCombatant(row: Row): Combatant {
     currentHp: Number(row.current_hp),
     temporaryHp: Number(row.temporary_hp ?? 0),
     initiative: Number(row.initiative),
+    initiativeRoll: row.initiative_roll == null ? Number(row.initiative) - Number(row.initiative_mod) : Number(row.initiative_roll),
+    initiativeSwapUsed: Boolean(row.initiative_swap_used),
     initiativeMod: Number(row.initiative_mod),
     initiativeGroupId: row.initiative_group_id ? String(row.initiative_group_id) : null,
     initiativeMode: row.initiative_mode === 'group' ? 'group' : 'individual',
@@ -261,6 +271,8 @@ export function toCombatantParams(combatant: Combatant): Record<string, unknown>
     ...combatant,
     baseArmorClass: combatant.baseArmorClass ?? combatant.armorClass,
     baseMaxHp: combatant.baseMaxHp ?? combatant.maxHp,
+    initiativeRoll: combatant.initiativeRoll ?? combatant.initiative - combatant.initiativeMod,
+    initiativeSwapUsed: combatant.initiativeSwapUsed ? 1 : 0,
     effectsJson: json(combatant.effects),
     snapshotJson: combatant.snapshot ? json(combatant.snapshot) : null,
     publicNameVisible: combatant.publicNameVisible ? 1 : 0,

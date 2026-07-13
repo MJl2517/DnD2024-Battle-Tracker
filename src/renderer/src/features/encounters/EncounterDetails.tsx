@@ -1,14 +1,38 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Dices, Edit3, Info, Save, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Edit3, Info, Save, X } from 'lucide-react';
 import type { EncounterLair } from '@shared/types';
 import type { EncounterDifficultyResult } from '@shared/encounterDifficulty';
 import { normalizeSignedInput, readNumber, readSignedNumber, signed } from '../../shared/lib/numbers';
 import { HoldDeleteButton } from '../../shared/ui/HoldDeleteButton';
+import { InitiativeRollModeToggle } from '../../shared/ui/InitiativeRollModeToggle';
 import { FeatureListEditor, StatEditorSection } from '../bestiary/BestiaryPanel';
 
 const api = window.dndTracker;
-export function EncounterDifficultyScale({ result }: { result: EncounterDifficultyResult }): JSX.Element {
-  const [collapsed, setCollapsed] = useState(false);
+export function EncounterDifficultyScale({ result, scopeKey }: { result: EncounterDifficultyResult; scopeKey: string }): JSX.Element {
+  const [collapsed, setCollapsed] = useState(true);
+  const [acknowledgedWarningKey, setAcknowledgedWarningKey] = useState('');
+  const hasCreatureCountWarning = result.partySize > 0 && result.hostileCreatureCount > result.partySize * 2;
+  const hasWarnings =
+    result.hasAllies ||
+    result.missingXpGroups > 0 ||
+    result.zeroChallengeCreatureCount > 0 ||
+    result.uniqueStatblockCount > 3 ||
+    result.powerfulCreatureCount > 0 ||
+    hasCreatureCountWarning;
+  const warningKey = [
+    scopeKey,
+    Number(result.hasAllies),
+    result.missingXpGroups,
+    result.zeroChallengeCreatureCount,
+    result.uniqueStatblockCount > 3 ? result.uniqueStatblockCount : 0,
+    result.powerfulCreatureCount,
+    hasCreatureCountWarning ? result.hostileCreatureCount : 0
+  ].join(':');
+  const hasUnreadWarnings = hasWarnings && acknowledgedWarningKey !== warningKey;
+
+  useEffect(() => {
+    if (!collapsed && hasWarnings) setAcknowledgedWarningKey(warningKey);
+  }, [collapsed, hasWarnings, warningKey]);
 
   if (!result.ok) {
     return (
@@ -39,10 +63,14 @@ export function EncounterDifficultyScale({ result }: { result: EncounterDifficul
           className="difficulty-collapse-button"
           type="button"
           aria-label="Развернуть оценку сложности"
-          title="Развернуть оценку сложности"
-          onClick={() => setCollapsed(false)}
+          title={hasUnreadWarnings ? 'Развернуть: есть новые предупреждения' : 'Развернуть оценку сложности'}
+          onClick={() => {
+            setAcknowledgedWarningKey(warningKey);
+            setCollapsed(false);
+          }}
         >
           <ChevronDown size={20} />
+          {hasUnreadWarnings && <span className="difficulty-warning-dot" aria-hidden="true" />}
         </button>
       </section>
     );
@@ -91,6 +119,45 @@ export function EncounterDifficultyScale({ result }: { result: EncounterDifficul
       </div>
 
       {result.hasAllies && <EncounterAllyDifficultyWarning />}
+      {result.zeroChallengeCreatureCount > 0 && (
+        <div className="difficulty-warning advisory">
+          <Info size={18} />
+          <span>
+            <strong>Существа с ПО 0: {result.zeroChallengeCreatureCount}.</strong>
+            Используйте их с осторожностью, особенно если они не дают опыта. Для большого количества таких существ лучше выбрать стаю из Бестиария.
+          </span>
+        </div>
+      )}
+      {result.uniqueStatblockCount > 3 && (
+        <div className="difficulty-warning advisory">
+          <Info size={18} />
+          <span>
+            <strong>Разных статблоков: {result.uniqueStatblockCount}.</strong>
+            Более двух-трёх типов существ усложняют ведение сцены, особенно если у каждого есть особые умения.
+          </span>
+        </div>
+      )}
+      {result.powerfulCreatureCount > 0 && (
+        <div className="difficulty-warning powerful">
+          <Info size={18} />
+          <span>
+            <strong>Могущественные существа: {result.powerfulCreatureCount}.</strong>
+            Их КО выше уровня хотя бы одного участника. Одного действия такого существа может хватить, чтобы вывести слабого персонажа из строя.
+          </span>
+        </div>
+      )}
+      {hasCreatureCountWarning && (
+        <div className="difficulty-warning powerful">
+          <Info size={18} />
+          <span>
+            <strong>
+              Множество существ: {result.hostileCreatureCount} против {result.partySize} персонажей.
+            </strong>
+            В сцене более двух враждебных существ на персонажа. Добавляйте преимущественно слабых противников, которых можно быстро победить. Это особенно важно
+            для персонажей 1–2 уровня.
+          </span>
+        </div>
+      )}
       {result.missingXpGroups > 0 && (
         <div className="difficulty-warning missing-xp">
           <Info size={18} />
@@ -323,17 +390,19 @@ export function EncounterQuantityControl({ quantity, busy, onSave }: { quantity:
 
 export function InitiativeSettingControls({
   advantage,
+  disadvantage,
   override,
   baseInitiative,
   busy,
-  onAdvantageChange,
+  onRollModeChange,
   onOverrideSave
 }: {
   advantage: boolean;
+  disadvantage: boolean;
   override: number | null;
   baseInitiative: number;
   busy: boolean;
-  onAdvantageChange: (advantage: boolean) => void;
+  onRollModeChange: (advantage: boolean, disadvantage: boolean) => void;
   onOverrideSave: (override: number | null) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState(override == null ? '' : String(override));
@@ -365,17 +434,7 @@ export function InitiativeSettingControls({
 
   return (
     <div className="initiative-settings">
-      <button
-        className={`initiative-advantage-toggle ${advantage ? 'active' : ''}`}
-        type="button"
-        disabled={busy}
-        aria-pressed={advantage}
-        title="Бросок инициативы с преимуществом"
-        onClick={() => onAdvantageChange(!advantage)}
-      >
-        <Dices size={17} />
-        Преим.
-      </button>
+      <InitiativeRollModeToggle compact advantage={advantage} disadvantage={disadvantage} disabled={busy} onChange={onRollModeChange} />
       <input
         ref={inputRef}
         className={`initiative-override-input ${draft.trim() ? 'active' : ''}`}

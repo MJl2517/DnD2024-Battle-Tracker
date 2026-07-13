@@ -34,11 +34,59 @@ describe('TrackerRepository integration', () => {
     });
     const creature = repository.saveCreature(creatureInput(campaign.id));
     const encounter = repository.saveEncounter({ campaignId: campaign.id, name: 'Test encounter' });
-    repository.saveEncounterPlayerSetting({ encounterId: encounter.id, playerId: player.id, participating: true });
-    repository.saveEncounterGroup({ encounterId: encounter.id, templateId: creature.id, quantity: 1, initiativeMode: 'individual' });
+    const playerSetting = repository.saveEncounterPlayerSetting({
+      encounterId: encounter.id,
+      playerId: player.id,
+      participating: true,
+      initiativeAdvantage: true,
+      initiativeDisadvantage: true
+    });
+    const creatureGroup = repository.saveEncounterGroup({
+      encounterId: encounter.id,
+      templateId: creature.id,
+      quantity: 1,
+      initiativeMode: 'individual',
+      initiativeAdvantage: true,
+      initiativeDisadvantage: true
+    });
+    expect(playerSetting).toMatchObject({ initiativeAdvantage: false, initiativeDisadvantage: true });
+    expect(creatureGroup).toMatchObject({ initiativeAdvantage: false, initiativeDisadvantage: true });
 
-    const session = repository.startCombat(encounter.id);
-    expect(session.combatants.map((combatant) => combatant.name).sort()).toEqual(['Hero', 'Training dummy']);
+    const preparation = repository.prepareCombat(encounter.id);
+    expect(preparation.status).toBe('preparing');
+    expect(preparation.combatants.map((combatant) => combatant.name).sort()).toEqual(['Hero', 'Training dummy']);
+    expect(repository.getCampaignDetail(campaign.id).activeSession).toBeNull();
+    expect(repository.getPlayerView(campaign.id).combatants).toEqual([]);
+
+    const hero = preparation.combatants.find((combatant) => combatant.playerId === player.id)!;
+    const enemyBeforeStart = preparation.combatants.find((combatant) => combatant.templateId === creature.id)!;
+    const session = repository.confirmCombatInitiative(preparation.id, [
+      { combatantId: hero.id, initiative: 12 },
+      { combatantId: enemyBeforeStart.id, initiative: 18 }
+    ]);
+    expect(session.status).toBe('active');
+    expect(session.combatants[0].id).toBe(enemyBeforeStart.id);
+    expect(repository.getPlayerView(campaign.id).combatants).toHaveLength(2);
+
+    const withReinforcements = repository.addCombatantsToCombat({
+      sessionId: session.id,
+      groups: [
+        {
+          templateId: creature.id,
+          quantity: 2,
+          initiativeRoll: 20,
+          initiativeBonus: 3,
+          initiativeAdvantage: true,
+          hpMode: 'fixed',
+          hpOverride: 17
+        }
+      ]
+    });
+    const reinforcements = withReinforcements.combatants.filter((combatant) => combatant.templateId === creature.id && combatant.id !== enemyBeforeStart.id);
+    expect(reinforcements).toHaveLength(2);
+    expect(reinforcements.every((combatant) => combatant.initiative === 23 && combatant.initiativeMod === 3)).toBe(true);
+    expect(reinforcements.every((combatant) => combatant.maxHp === 17 && combatant.currentHp === 17)).toBe(true);
+    expect(withReinforcements.activeCombatantId).toBe(session.activeCombatantId);
 
     const enemy = session.combatants.find((combatant) => combatant.templateId === creature.id);
     expect(enemy).toBeDefined();
@@ -58,6 +106,70 @@ describe('TrackerRepository integration', () => {
     expect(tables.map((table) => table.name)).toEqual(
       expect.arrayContaining(['campaigns', 'player_characters', 'creature_templates', 'encounters', 'combat_sessions', 'combatants'])
     );
+  });
+
+  it('exchanges Alert initiative only with a player or allied NPC during preparation', () => {
+    database = openMemoryDatabase();
+    const repository = new TrackerRepository(database);
+    const campaign = repository.createCampaign({ name: 'Alert campaign' });
+    const alertPlayer = repository.savePlayer({
+      campaignId: campaign.id,
+      name: 'Alert hero',
+      level: 5,
+      armorClass: 16,
+      maxHp: 35,
+      initiativeMod: 4,
+      passivePerception: 14,
+      active: true,
+      alertInitiativeSwap: true
+    });
+    const allyPlayer = repository.savePlayer({
+      campaignId: campaign.id,
+      name: 'Ally hero',
+      level: 5,
+      armorClass: 17,
+      maxHp: 42,
+      initiativeMod: 1,
+      passivePerception: 12,
+      active: true
+    });
+    const creature = repository.saveCreature(creatureInput(campaign.id));
+    const encounter = repository.saveEncounter({ campaignId: campaign.id, name: 'Alert encounter' });
+    repository.saveEncounterPlayerSetting({ encounterId: encounter.id, playerId: alertPlayer.id, participating: true });
+    repository.saveEncounterPlayerSetting({ encounterId: encounter.id, playerId: allyPlayer.id, participating: true });
+    repository.saveEncounterGroup({ encounterId: encounter.id, templateId: creature.id, displayName: 'Enemy', quantity: 1, initiativeMode: 'individual' });
+    repository.saveEncounterGroup({
+      encounterId: encounter.id,
+      templateId: creature.id,
+      displayName: 'Friendly NPC',
+      quantity: 1,
+      initiativeMode: 'individual',
+      isAlly: true
+    });
+
+    const preparation = repository.prepareCombat(encounter.id);
+    const source = preparation.combatants.find((combatant) => combatant.playerId === alertPlayer.id)!;
+    const playerTarget = preparation.combatants.find((combatant) => combatant.playerId === allyPlayer.id)!;
+    const enemy = preparation.combatants.find((combatant) => combatant.name === 'Enemy')!;
+    const friendlyNpc = preparation.combatants.find((combatant) => combatant.name === 'Friendly NPC')!;
+    const entries = preparation.combatants.map((combatant, index) => ({
+      combatantId: combatant.id,
+      roll: 10 + index,
+      initiative: 10 + index + combatant.initiativeMod
+    }));
+
+    repository.beginInitiativeExchange(preparation.id, source.id, entries);
+    const prompt = repository.getPlayerView(campaign.id).initiativeExchange;
+    expect(prompt?.candidates.map((candidate) => candidate.combatantId)).toEqual(expect.arrayContaining([playerTarget.id, friendlyNpc.id]));
+    expect(prompt?.candidates.map((candidate) => candidate.combatantId)).not.toContain(enemy.id);
+
+    const sourceBefore = repository.getCombatSession(preparation.id).combatants.find((combatant) => combatant.id === source.id)!.initiative;
+    const targetBefore = repository.getCombatSession(preparation.id).combatants.find((combatant) => combatant.id === friendlyNpc.id)!.initiative;
+    const swapped = repository.swapCombatInitiative(preparation.id, source.id, friendlyNpc.id);
+    expect(swapped.combatants.find((combatant) => combatant.id === source.id)?.initiative).toBe(targetBefore);
+    expect(swapped.combatants.find((combatant) => combatant.id === friendlyNpc.id)?.initiative).toBe(sourceBefore);
+    expect(repository.getPlayerView(campaign.id).initiativeExchange).toBeNull();
+    expect(() => repository.beginInitiativeExchange(preparation.id, source.id, entries)).toThrow('уже использовал обмен инициативой');
   });
 
   it('opens a legacy database without deleting existing campaigns', () => {

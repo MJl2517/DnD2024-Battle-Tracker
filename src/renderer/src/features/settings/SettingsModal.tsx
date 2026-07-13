@@ -3,7 +3,13 @@ import { Info, Play, Settings, UploadCloud, X } from 'lucide-react';
 import { DEFAULT_PUBLIC_DISPLAY_SETTINGS, type AppUpdateStatus, type PublicDisplaySettings } from '@shared/types';
 
 const api = window.dndTracker;
-export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
+export function SettingsModal({
+  onClose,
+  onDisplaySettingsChange
+}: {
+  onClose: () => void;
+  onDisplaySettingsChange?: (settings: PublicDisplaySettings) => void;
+}): JSX.Element {
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
   const [displaySettings, setDisplaySettings] = useState<PublicDisplaySettings>(DEFAULT_PUBLIC_DISPLAY_SETTINGS);
@@ -12,9 +18,12 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
 
   useEffect(() => {
     void api.getUpdateStatus().then(setUpdateStatus);
-    void api.getPublicDisplaySettings().then(setDisplaySettings);
+    void api.getPublicDisplaySettings().then((settings) => {
+      setDisplaySettings(settings);
+      onDisplaySettingsChange?.(settings);
+    });
     return api.onUpdateStatus(setUpdateStatus);
-  }, []);
+  }, [onDisplaySettingsChange]);
 
   async function saveDisplaySettings(patch: Partial<PublicDisplaySettings>): Promise<void> {
     const nextSettings = { ...displaySettings, ...patch };
@@ -22,7 +31,9 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
     setDisplayBusy(true);
     setDisplayError(null);
     try {
-      setDisplaySettings(await api.savePublicDisplaySettings(nextSettings));
+      const savedSettings = await api.savePublicDisplaySettings(nextSettings);
+      setDisplaySettings(savedSettings);
+      onDisplaySettingsChange?.(savedSettings);
     } catch (err) {
       setDisplaySettings(displaySettings);
       setDisplayError(err instanceof Error ? err.message : String(err));

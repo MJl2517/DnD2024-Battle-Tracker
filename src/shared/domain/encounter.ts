@@ -21,6 +21,7 @@ export interface EncounterCreatureGroup extends Timestamped {
   quantity: number;
   initiativeMode: InitiativeMode;
   initiativeAdvantage: boolean;
+  initiativeDisadvantage: boolean;
   initiativeOverride: number | null;
   hpMode: HitPointMode;
   hpOverride: number | null;
@@ -33,6 +34,7 @@ export interface EncounterPlayerSetting extends Timestamped {
   playerId: string;
   participating: boolean;
   initiativeAdvantage: boolean;
+  initiativeDisadvantage: boolean;
   initiativeOverride: number | null;
 }
 
@@ -63,6 +65,7 @@ export interface SaveEncounterGroupInput {
   quantity: number;
   initiativeMode: InitiativeMode;
   initiativeAdvantage?: boolean;
+  initiativeDisadvantage?: boolean;
   initiativeOverride?: number | null;
   hpMode?: HitPointMode;
   hpOverride?: number | null;
@@ -74,6 +77,7 @@ export interface SaveEncounterPlayerSettingInput {
   playerId: string;
   participating?: boolean;
   initiativeAdvantage?: boolean;
+  initiativeDisadvantage?: boolean;
   initiativeOverride?: number | null;
 }
 

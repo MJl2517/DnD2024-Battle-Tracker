@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Clock, Eye, EyeOff, HeartPulse, Info, LogOut, Plus, Shield, Skull } from 'lucide-react';
+import { ChevronDown, ChevronUp, Clock, Eye, EyeOff, HeartPulse, Info, LogOut, Plus, Shield, Skull } from 'lucide-react';
 import type { CombatEffect, Combatant, CombatantPatch, CreatureTemplate, EncounterLair } from '@shared/types';
 import { isBloodied } from '@shared/combat';
 import {
@@ -72,8 +72,7 @@ export function CombatantCard({
   index,
   active,
   busy,
-  onDragStart,
-  onDrop,
+  showNameVisibilityControl,
   onSetActive,
   onDamage,
   onHeal,
@@ -88,8 +87,7 @@ export function CombatantCard({
   index: number;
   active: boolean;
   busy: boolean;
-  onDragStart: () => void;
-  onDrop: () => void;
+  showNameVisibilityControl: boolean;
   onSetActive: () => void;
   onDamage: (amount: number) => void;
   onHeal: (amount: number) => void;
@@ -108,6 +106,8 @@ export function CombatantCard({
   const [shiftMode, setShiftMode] = useState(false);
   const [timerName, setTimerName] = useState('');
   const [timerRounds, setTimerRounds] = useState('1');
+  const [collapsed, setCollapsed] = useState(combatant.defeated || combatant.escaped);
+  const previousTerminalStateRef = useRef(combatant.defeated || combatant.escaped);
   const creatureSnapshot = combatant.snapshot && isCreatureSnapshot(combatant.snapshot) ? combatant.snapshot : null;
   const lairSnapshot = combatant.snapshot && isLairSnapshot(combatant.snapshot) ? combatant.snapshot : combatantToLairFallback(combatant);
   const isLairCombatant = Boolean(lairSnapshot);
@@ -153,6 +153,16 @@ export function CombatantCard({
     const status = getStatusEffectDefinition(CONCENTRATION_STATUS_ID);
     if (!status) return;
     onEffects([...combatant.effects, { id: clientId(), label: status.label, public: status.public, statusId: status.id }]);
+  }
+
+  function toggleCollapsed(): void {
+    const nextCollapsed = !collapsed;
+    setCollapsed(nextCollapsed);
+    if (nextCollapsed) {
+      setOpen(false);
+      setTimerOpen(false);
+      setStatEditor(null);
+    }
   }
 
   function addTimedEffect(): void {
@@ -213,6 +223,21 @@ export function CombatantCard({
   }, []);
 
   useEffect(() => {
+    const terminalState = combatant.defeated || combatant.escaped;
+    const previousTerminalState = previousTerminalStateRef.current;
+    previousTerminalStateRef.current = terminalState;
+
+    if (terminalState && !previousTerminalState) {
+      setCollapsed(true);
+      setOpen(false);
+      setTimerOpen(false);
+      setStatEditor(null);
+    } else if (!terminalState && previousTerminalState) {
+      setCollapsed(false);
+    }
+  }, [combatant.defeated, combatant.escaped]);
+
+  useEffect(() => {
     function syncShiftMode(event: KeyboardEvent): void {
       setShiftMode(event.shiftKey);
     }
@@ -233,25 +258,34 @@ export function CombatantCard({
 
   return (
     <article
-      className={`combat-card ${active ? 'active' : ''} ${combatant.isAlly ? 'ally' : ''} ${bloodied ? 'bloodied' : ''} ${concentrating ? 'concentrating' : ''} ${combatant.defeated ? 'defeated' : ''} ${combatant.escaped ? 'escaped' : ''}`}
-      draggable
-      onDragStart={onDragStart}
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={onDrop}
+      data-combatant-id={combatant.id}
+      className={`combat-card ${collapsed ? 'collapsed' : ''} ${active ? 'active' : ''} ${combatant.isAlly ? 'ally' : ''} ${bloodied ? 'bloodied' : ''} ${concentrating ? 'concentrating' : ''} ${combatant.defeated ? 'defeated' : ''} ${combatant.escaped ? 'escaped' : ''}`}
     >
-      {!combatant.defeated && (
+      <div className="combat-card-utility-buttons">
+        {!combatant.defeated && (
+          <button
+            className={`concentration-button ${concentrating ? 'active' : ''}`}
+            type="button"
+            aria-label={concentrationTooltip}
+            aria-pressed={concentrating}
+            disabled={busy}
+            onClick={toggleConcentration}
+            title={concentrationTooltip}
+          >
+            <img src="./statuses/concentrating.svg" alt="" />
+          </button>
+        )}
         <button
-          className={`concentration-button ${concentrating ? 'active' : ''}`}
+          className="card-collapse-button"
           type="button"
-          aria-label={concentrationTooltip}
-          aria-pressed={concentrating}
-          disabled={busy}
-          onClick={toggleConcentration}
-          title={concentrationTooltip}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? `Раскрыть карточку: ${combatant.name}` : `Свернуть карточку: ${combatant.name}`}
+          title={collapsed ? 'Раскрыть карточку' : 'Свернуть карточку'}
+          onClick={toggleCollapsed}
         >
-          <img src="./statuses/concentrating.svg" alt="" />
+          {collapsed ? <ChevronDown size={22} /> : <ChevronUp size={22} />}
         </button>
-      )}
+      </div>
       {!isLairCombatant && combatant.defeated && (
         <span className="death-mark" aria-hidden="true">
           <Skull size={34} />
@@ -271,7 +305,7 @@ export function CombatantCard({
           <div>
             <div className="combat-name-row">
               <h3>{combatant.name}</h3>
-              {combatant.side === 'npc' && (
+              {combatant.side === 'npc' && showNameVisibilityControl && (
                 <button
                   className={`name-visibility-button ${combatant.publicNameVisible ? 'active' : ''}`}
                   type="button"
@@ -290,6 +324,32 @@ export function CombatantCard({
               Иниц. {combatant.initiative} · {combatant.side === 'npc' ? 'NPC' : 'Игрок'}
             </p>
           </div>
+          {collapsed && (combatant.isAlly || bloodied || combatant.defeated || combatant.escaped || combatant.effects.length > 0) && (
+            <div className="compact-chip-row" aria-label="Активные состояния и эффекты">
+              {combatant.defeated && (
+                <span className="chip compact-outcome-chip defeated-outcome-chip">
+                  <Skull size={16} />
+                  Побеждён
+                </span>
+              )}
+              {combatant.escaped && (
+                <span className="chip compact-outcome-chip escaped-outcome-chip">
+                  <LogOut size={16} />
+                  Сбежал
+                </span>
+              )}
+              {combatant.isAlly && (
+                <span className="chip ally-chip">
+                  <Shield size={15} />
+                  Союзник
+                </span>
+              )}
+              {!isLairCombatant && bloodied && !combatant.defeated && <span className="chip danger-chip">Окровавлен</span>}
+              {combatant.effects.map((effect) => (
+                <StatusEffectChip key={effect.id} effect={effect} onRemove={() => onEffects(combatant.effects.filter((item) => item.id !== effect.id))} />
+              ))}
+            </div>
+          )}
           {!isLairCombatant && (
             <div className="combat-stats">
               <Stat icon={<Shield size={18} />} label="КД" value={combatant.armorClass} onClick={() => setStatEditor('ac')} />
@@ -303,22 +363,24 @@ export function CombatantCard({
           )}
         </div>
 
-        <div className="chip-row">
-          {combatant.isAlly && (
-            <span className="chip ally-chip">
-              <Shield size={15} />
-              Союзник
-            </span>
-          )}
-          {!isLairCombatant && bloodied && <span className="chip danger-chip">Окровавлен</span>}
-          {!isLairCombatant && combatant.defeated && <span className="chip muted-chip">Побеждён</span>}
-          {!isLairCombatant && combatant.escaped && <span className="chip muted-chip">Сбежал</span>}
-          {combatant.effects.map((effect) => (
-            <StatusEffectChip key={effect.id} effect={effect} onRemove={() => onEffects(combatant.effects.filter((item) => item.id !== effect.id))} />
-          ))}
-        </div>
+        {!collapsed && (
+          <div className="chip-row">
+            {combatant.isAlly && (
+              <span className="chip ally-chip">
+                <Shield size={15} />
+                Союзник
+              </span>
+            )}
+            {!isLairCombatant && bloodied && <span className="chip danger-chip">Окровавлен</span>}
+            {!isLairCombatant && combatant.defeated && <span className="chip muted-chip">Побеждён</span>}
+            {!isLairCombatant && combatant.escaped && <span className="chip muted-chip">Сбежал</span>}
+            {combatant.effects.map((effect) => (
+              <StatusEffectChip key={effect.id} effect={effect} onRemove={() => onEffects(combatant.effects.filter((item) => item.id !== effect.id))} />
+            ))}
+          </div>
+        )}
 
-        <div className="combat-controls">
+        <div className={`combat-controls ${collapsed ? 'compact' : ''} ${isLairCombatant ? 'lair' : ''}`}>
           {!isLairCombatant && (
             <section className="combat-control-group hp-control" aria-label="Управление хитами">
               <span className="control-label hint-label">
@@ -378,45 +440,55 @@ export function CombatantCard({
             </section>
           )}
 
-          <section className="combat-control-group effects-control" aria-label="Состояния и эффекты">
-            <span className="control-label">Состояния и эффекты</span>
-            <div className="effect-form">
-              <CustomSelect
-                value=""
-                onChange={() => undefined}
-                onSelect={addStatusEffect}
-                selectedValues={combatant.effects.map((effect) => effect.statusId).filter((statusId): statusId is string => Boolean(statusId))}
-                options={STATUS_EFFECTS.map((status) => ({
-                  value: status.id,
-                  label: status.label,
-                  description: status.originalName,
-                  icon: status.icon
-                }))}
-                placeholder="Выберите состояние"
-                ariaLabel="Выбрать эффект"
-              />
-              <input value={effectName} onChange={(event) => setEffectName(event.target.value)} placeholder="Свой эффект" />
-              <button className="icon-button" type="button" onClick={addCustomEffect} aria-label="Добавить свой эффект">
-                <Plus size={17} />
-              </button>
-              <button
-                className="button mini secondary icon-only"
-                type="button"
-                disabled={busy}
-                onClick={() => setTimerOpen(true)}
-                aria-label="Добавить таймер эффекта"
-                title="Таймер эффекта"
-              >
-                <Clock size={16} />
-              </button>
-            </div>
-          </section>
+          {!collapsed && (
+            <section className="combat-control-group effects-control" aria-label="Состояния и эффекты">
+              <span className="control-label">Состояния и эффекты</span>
+              <div className="effect-form">
+                <CustomSelect
+                  value=""
+                  onChange={() => undefined}
+                  onSelect={addStatusEffect}
+                  selectedValues={combatant.effects.map((effect) => effect.statusId).filter((statusId): statusId is string => Boolean(statusId))}
+                  options={STATUS_EFFECTS.map((status) => ({
+                    value: status.id,
+                    label: status.label,
+                    description: status.originalName,
+                    icon: status.icon
+                  }))}
+                  placeholder="Выберите состояние"
+                  ariaLabel="Выбрать эффект"
+                />
+                <input value={effectName} onChange={(event) => setEffectName(event.target.value)} placeholder="Свой эффект" />
+                <button className="icon-button" type="button" onClick={addCustomEffect} aria-label="Добавить свой эффект">
+                  <Plus size={17} />
+                </button>
+                <button
+                  className="button mini secondary icon-only"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setTimerOpen(true)}
+                  aria-label="Добавить таймер эффекта"
+                  title="Таймер эффекта"
+                >
+                  <Clock size={16} />
+                </button>
+              </div>
+            </section>
+          )}
 
           <section className="combat-control-group card-actions-control" aria-label="Действия карточки">
             <span className="control-label">Действия</span>
             <div className="card-action-buttons">
               {(creatureSnapshot || lairSnapshot) && (
-                <button className="button mini secondary" type="button" onClick={() => setOpen(!open)}>
+                <button
+                  className="button mini secondary"
+                  type="button"
+                  onClick={() => {
+                    const nextOpen = !open;
+                    setOpen(nextOpen);
+                    if (nextOpen) setCollapsed(false);
+                  }}
+                >
                   <Eye size={16} />
                   Статблок
                 </button>

@@ -1,7 +1,10 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc/channels';
 import type {
+  AddCombatantsToCombatInput,
   CombatantPatch,
+  CombatInitiativeEntry,
+  CombatSession,
   CompleteCombatOptions,
   CreateCampaignInput,
   PublicDisplaySettings,
@@ -75,6 +78,36 @@ export function registerIpcHandlers({ repository, updater, windows }: IpcDepende
   handle(IPC_CHANNELS.encounter.deleteLair, (_event, encounterId: string) => repository.deleteEncounterLair(encounterId));
 
   handle(IPC_CHANNELS.combat.start, (_event, encounterId: string) => withBroadcast(repository.startCombat(encounterId), broadcast));
+  // Подготовка намеренно не рассылается в публичное окно: игроки увидят бой только после подтверждения мастером.
+  handle(IPC_CHANNELS.combat.prepare, (_event, encounterId: string) => repository.prepareCombat(encounterId));
+  handle(IPC_CHANNELS.combat.confirmInitiative, (_event, sessionId: string, entries: CombatInitiativeEntry[]) =>
+    withPreparationBroadcast(withBroadcast(repository.confirmCombatInitiative(sessionId, entries), broadcast), windows, null)
+  );
+  handle(IPC_CHANNELS.combat.beginInitiativeExchange, (_event, sessionId: string, sourceCombatantId: string, entries: CombatInitiativeEntry[]) => {
+    const session = repository.beginInitiativeExchange(sessionId, sourceCombatantId, entries);
+    broadcast(session.campaignId);
+    windows.broadcastCombatPreparation(session);
+    return session;
+  });
+  handle(IPC_CHANNELS.combat.swapInitiative, (_event, sessionId: string, sourceCombatantId: string, targetCombatantId: string) => {
+    const session = repository.swapCombatInitiative(sessionId, sourceCombatantId, targetCombatantId);
+    broadcast(session.campaignId);
+    windows.broadcastCombatPreparation(session);
+    return session;
+  });
+  handle(IPC_CHANNELS.combat.cancelInitiativeExchange, (_event, sessionId: string) => {
+    const session = repository.cancelInitiativeExchange(sessionId);
+    broadcast(session.campaignId);
+    windows.broadcastCombatPreparation(session);
+    return session;
+  });
+  handle(IPC_CHANNELS.combat.cancelPreparation, (_event, sessionId: string) => {
+    const session = repository.getCombatSession(sessionId);
+    repository.cancelCombatPreparation(sessionId);
+    broadcast(session.campaignId);
+    windows.broadcastCombatPreparation(null);
+  });
+  handle(IPC_CHANNELS.combat.addCombatants, (_event, input: AddCombatantsToCombatInput) => withBroadcast(repository.addCombatantsToCombat(input), broadcast));
   handle(IPC_CHANNELS.combat.get, (_event, sessionId: string) => repository.getCombatSession(sessionId));
   handle(IPC_CHANNELS.combat.updateCombatant, (_event, id: string, patch: CombatantPatch) => withBroadcast(repository.updateCombatant(id, patch), broadcast));
   handle(IPC_CHANNELS.combat.reorderCombatants, (_event, sessionId: string, ids: string[]) =>
@@ -112,5 +145,10 @@ export function registerIpcHandlers({ repository, updater, windows }: IpcDepende
 
 function withBroadcast<T extends { campaignId: string }>(value: T, broadcast: (campaignId: string) => void): T {
   broadcast(value.campaignId);
+  return value;
+}
+
+function withPreparationBroadcast<T>(value: T, windows: WindowManager, session: CombatSession | null): T {
+  windows.broadcastCombatPreparation(session);
   return value;
 }

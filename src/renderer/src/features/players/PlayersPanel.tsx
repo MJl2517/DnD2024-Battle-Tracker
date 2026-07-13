@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ClipboardPaste, Info, Save, Swords, UploadCloud, Users } from 'lucide-react';
+import { ChevronDown, ClipboardPaste, Info, RefreshCw, Save, Swords, UploadCloud, Users } from 'lucide-react';
 import type { CampaignDetail, PlayerCharacter } from '@shared/types';
 import { HoldDeleteButton } from '../../shared/ui/HoldDeleteButton';
 import { ImageUrlInput } from '../../shared/ui/ImageUrlInput';
@@ -277,6 +277,24 @@ export function PlayersPanel({
               <small>{draft.active ? 'Персонаж добавляется в энкаунтеры и бои' : 'Персонаж хранится в кампании, но не участвует в боях'}</small>
             </span>
           </label>
+          <label className={`wide player-active-toggle player-feat-toggle ${draft.alertInitiativeSwap ? 'active' : ''}`}>
+            <input
+              type="checkbox"
+              checked={draft.alertInitiativeSwap}
+              onChange={(event) => setDraft({ ...draft, alertInitiativeSwap: event.target.checked })}
+            />
+            <span className="player-active-mark" aria-hidden="true">
+              <RefreshCw size={17} />
+            </span>
+            <span>
+              <strong>Бдительный — Обмен Инициативой</strong>
+              <small>Черта персонажа</small>
+            </span>
+            <span className="player-feat-tooltip" role="tooltip">
+              Сразу после совершения броска Инициативы вы можете обменяться значениями Инициативы с одним согласным союзником, участвующим в том же бою. Вы не
+              можете совершить этот обмен, если у вас или этого союзника есть состояние Недееспособный.
+            </span>
+          </label>
           <label className="wide">
             Арт персонажа
             <ImageUrlInput value={draft.imageUrl} onChange={(imageUrl) => setDraft({ ...draft, imageUrl })} placeholder="URL портрета или аватара персонажа" />
@@ -315,6 +333,7 @@ export function PlayersPanel({
                 <div className="player-list-name-row">
                   <h3>{player.name}</h3>
                   {!player.active && <span className="inactive-player-badge">Не активен в боях</span>}
+                  {player.alertInitiativeSwap && <span className="player-feat-badge">Бдительный</span>}
                 </div>
                 <p>
                   Уровень {player.level} · КД {player.armorClass} · Хиты {player.maxHp} · инициатива {signed(player.initiativeMod)}

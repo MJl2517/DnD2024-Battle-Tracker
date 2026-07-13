@@ -22,6 +22,10 @@ export interface EncounterDifficultyResult {
   budgets: EncounterDifficultyBudget[];
   hasAllies: boolean;
   missingXpGroups: number;
+  zeroChallengeCreatureCount: number;
+  uniqueStatblockCount: number;
+  powerfulCreatureCount: number;
+  hostileCreatureCount: number;
 }
 
 const XP_BY_LEVEL: Record<number, Record<EncounterBudgetKey, number>> = {
@@ -107,7 +111,21 @@ export function calculateEncounterDifficulty(
   });
   const levels = members.map((player) => player.level);
   const hasAllies = groups.some((group) => group.isAlly);
+  const hostileCreatureCount = groups.reduce((total, group) => (group.isAlly ? total : total + Math.max(1, group.quantity)), 0);
   const creatureById = new Map(creatures.map((creature) => [creature.id, creature]));
+  const uniqueStatblockCount = new Set(groups.map((group) => group.templateId)).size;
+  const zeroChallengeCreatureCount = groups.reduce((total, group) => {
+    const creature = creatureById.get(group.templateId);
+    const challengeRating = creature ? parseChallengeRatingValue(creature.challengeRating) : null;
+    return challengeRating === 0 ? total + Math.max(1, group.quantity) : total;
+  }, 0);
+  const minimumPlayerLevel = levels.length ? Math.min(...levels) : null;
+  const powerfulCreatureCount = groups.reduce((total, group) => {
+    if (group.isAlly || minimumPlayerLevel === null) return total;
+    const creature = creatureById.get(group.templateId);
+    const challengeRating = creature ? parseChallengeRatingValue(creature.challengeRating) : null;
+    return challengeRating !== null && challengeRating > minimumPlayerLevel ? total + Math.max(1, group.quantity) : total;
+  }, 0);
   let missingXpGroups = 0;
   const enemyXp = groups.reduce((total, group) => {
     if (group.isAlly) return total;
@@ -129,7 +147,11 @@ export function calculateEncounterDifficulty(
       difficultyLabel: 'Нет данных',
       budgets: [],
       hasAllies,
-      missingXpGroups
+      missingXpGroups,
+      zeroChallengeCreatureCount,
+      uniqueStatblockCount,
+      powerfulCreatureCount,
+      hostileCreatureCount
     };
   }
 
@@ -154,7 +176,11 @@ export function calculateEncounterDifficulty(
     difficultyLabel,
     budgets,
     hasAllies,
-    missingXpGroups
+    missingXpGroups,
+    zeroChallengeCreatureCount,
+    uniqueStatblockCount,
+    powerfulCreatureCount,
+    hostileCreatureCount
   };
 }
 
@@ -167,6 +193,15 @@ function getCreatureDifficultyXp(creature: CreatureTemplate): number {
 function normalizeChallengeRating(value: string): string {
   const match = value.trim().match(/(?:^|\s)(1\/8|1\/4|1\/2|(?:[12]?\d|30))(?:\s|$|\()/);
   return match?.[1] ?? '';
+}
+
+/** Переводит целое или дробное КО в число для сравнения с уровнем персонажа. */
+function parseChallengeRatingValue(value: string): number | null {
+  const normalized = normalizeChallengeRating(value);
+  if (!normalized) return null;
+  if (!normalized.includes('/')) return Number(normalized);
+  const [numerator, denominator] = normalized.split('/').map(Number);
+  return denominator > 0 ? numerator / denominator : null;
 }
 
 function buildLevelSummary(levels: number[]): string {

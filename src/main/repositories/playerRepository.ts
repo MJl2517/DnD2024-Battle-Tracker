@@ -26,6 +26,7 @@ export class PlayerRepository {
       initiativeMod: clamp(input.initiativeMod, -20, 30),
       passivePerception: clamp(input.passivePerception, 1, 40),
       active: input.active,
+      alertInitiativeSwap: Boolean(input.alertInitiativeSwap),
       imageUrl: input.imageUrl?.trim() ?? '',
       notes: input.notes?.trim() ?? '',
       createdAt: existing ? String(existing.created_at) : timestamp,
@@ -35,14 +36,15 @@ export class PlayerRepository {
     this.database.sqlite
       .prepare(
         `
-        INSERT INTO player_characters (id, campaign_id, name, level, armor_class, max_hp, initiative_mod, passive_perception, active, image_url, notes, created_at, updated_at)
-        VALUES (@id, @campaignId, @name, @level, @armorClass, @maxHp, @initiativeMod, @passivePerception, @active, @imageUrl, @notes, @createdAt, @updatedAt)
+        INSERT INTO player_characters (id, campaign_id, name, level, armor_class, max_hp, initiative_mod, passive_perception, active, alert_initiative_swap, image_url, notes, created_at, updated_at)
+        VALUES (@id, @campaignId, @name, @level, @armorClass, @maxHp, @initiativeMod, @passivePerception, @active, @alertInitiativeSwap, @imageUrl, @notes, @createdAt, @updatedAt)
         ON CONFLICT(id) DO UPDATE SET name = excluded.name, level = excluded.level, armor_class = excluded.armor_class, max_hp = excluded.max_hp,
           initiative_mod = excluded.initiative_mod, passive_perception = excluded.passive_perception, active = excluded.active,
+          alert_initiative_swap = excluded.alert_initiative_swap,
           image_url = excluded.image_url, notes = excluded.notes, updated_at = excluded.updated_at
       `
       )
-      .run({ ...player, active: player.active ? 1 : 0 });
+      .run({ ...player, active: player.active ? 1 : 0, alertInitiativeSwap: player.alertInitiativeSwap ? 1 : 0 });
     touchCampaign(this.database, player.campaignId);
     return player;
   }

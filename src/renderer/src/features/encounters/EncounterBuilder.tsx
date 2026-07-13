@@ -1,12 +1,23 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
-import { Play, Plus, Shield } from 'lucide-react';
-import type { CreatureTemplate, Encounter, EncounterCreatureGroup, EncounterPlayerSetting, HitPointMode, InitiativeMode, PlayerCharacter } from '@shared/types';
+import { Dices, Plus, Shield } from 'lucide-react';
+import type {
+  CombatInitiativeEntry,
+  CombatSession,
+  CreatureTemplate,
+  Encounter,
+  EncounterCreatureGroup,
+  EncounterPlayerSetting,
+  HitPointMode,
+  InitiativeMode,
+  PlayerCharacter
+} from '@shared/types';
 import { describeInitiativeMode } from '@shared/combat';
 import { calculateEncounterDifficulty } from '@shared/encounterDifficulty';
 import { CustomSelect, SearchableSelect, type SelectOption } from '../../shared/ui/Select';
 import { HoldDeleteButton } from '../../shared/ui/HoldDeleteButton';
 import { readNumber, signed } from '../../shared/lib/numbers';
 import { EncounterDifficultyScale, EncounterLairEditor, EncounterQuantityControl, InitiativeSettingControls } from './EncounterDetails';
+import { InitiativeSetupModal } from './InitiativeSetupModal';
 
 const api = window.dndTracker;
 function describeHitPointMode(group: EncounterCreatureGroup, template: CreatureTemplate | undefined): string {
@@ -42,7 +53,7 @@ export function EncounterBuilder({
   run: <T>(work: () => Promise<T>) => Promise<T | undefined>;
   onRefresh: () => Promise<void>;
   onDelete: () => Promise<void>;
-  onStart: () => Promise<void>;
+  onStart: () => void;
 }): JSX.Element {
   const [templateId, setTemplateId] = useState('');
   const [templateSearch, setTemplateSearch] = useState('');
@@ -52,6 +63,7 @@ export function EncounterBuilder({
   const [hpOverride, setHpOverride] = useState('');
   const [isAlly, setIsAlly] = useState(false);
   const [addLairWithCreature, setAddLairWithCreature] = useState(false);
+  const [preparedSession, setPreparedSession] = useState<CombatSession | null>(null);
   const templateById = useMemo(() => new Map(creatures.map((creature) => [creature.id, creature])), [creatures]);
   const selectedTemplate = templateById.get(templateId);
   const playerSettingById = useMemo(() => new Map(encounter.playerSettings.map((setting) => [setting.playerId, setting])), [encounter.playerSettings]);
@@ -148,9 +160,29 @@ export function EncounterBuilder({
     await onRefresh();
   }
 
+  async function prepareInitiative(): Promise<void> {
+    const session = await run(() => api.prepareCombat(encounter.id));
+    if (session) setPreparedSession(session);
+  }
+
+  async function cancelInitiative(): Promise<void> {
+    if (!preparedSession) return;
+    await run(() => api.cancelCombatPreparation(preparedSession.id));
+    setPreparedSession(null);
+  }
+
+  async function confirmInitiative(entries: CombatInitiativeEntry[]): Promise<void> {
+    if (!preparedSession) return;
+    const session = await run(() => api.confirmCombatInitiative(preparedSession.id, entries));
+    if (!session) return;
+    setPreparedSession(null);
+    await onRefresh();
+    onStart();
+  }
+
   async function saveGroupInitiative(
     group: EncounterCreatureGroup,
-    patch: Partial<Pick<EncounterCreatureGroup, 'quantity' | 'initiativeAdvantage' | 'initiativeOverride' | 'isAlly'>>
+    patch: Partial<Pick<EncounterCreatureGroup, 'quantity' | 'initiativeAdvantage' | 'initiativeDisadvantage' | 'initiativeOverride' | 'isAlly'>>
   ): Promise<void> {
     await run(() =>
       api.saveEncounterGroup({
@@ -161,6 +193,7 @@ export function EncounterBuilder({
         quantity: patch.quantity ?? group.quantity,
         initiativeMode: group.initiativeMode,
         initiativeAdvantage: patch.initiativeAdvantage ?? group.initiativeAdvantage,
+        initiativeDisadvantage: patch.initiativeDisadvantage ?? group.initiativeDisadvantage,
         initiativeOverride: patch.initiativeOverride === undefined ? group.initiativeOverride : patch.initiativeOverride,
         hpMode: group.hpMode,
         hpOverride: group.hpOverride,
@@ -173,7 +206,7 @@ export function EncounterBuilder({
   async function savePlayerInitiative(
     player: PlayerCharacter,
     setting: EncounterPlayerSetting | undefined,
-    patch: Partial<Pick<EncounterPlayerSetting, 'participating' | 'initiativeAdvantage' | 'initiativeOverride'>>
+    patch: Partial<Pick<EncounterPlayerSetting, 'participating' | 'initiativeAdvantage' | 'initiativeDisadvantage' | 'initiativeOverride'>>
   ): Promise<void> {
     await run(() =>
       api.saveEncounterPlayerSetting({
@@ -181,6 +214,7 @@ export function EncounterBuilder({
         playerId: player.id,
         participating: patch.participating ?? setting?.participating ?? true,
         initiativeAdvantage: patch.initiativeAdvantage ?? setting?.initiativeAdvantage ?? false,
+        initiativeDisadvantage: patch.initiativeDisadvantage ?? setting?.initiativeDisadvantage ?? false,
         initiativeOverride: patch.initiativeOverride === undefined ? (setting?.initiativeOverride ?? null) : patch.initiativeOverride
       })
     );
@@ -197,13 +231,13 @@ export function EncounterBuilder({
           </div>
           <div className="toolbar-actions">
             <HoldDeleteButton label="Удалить энкаунтер" disabled={busy} onConfirm={onDelete} />
-            <button className="button primary" type="button" disabled={busy || !encounter.groups.length} onClick={() => void onStart()}>
-              <Play size={20} />
-              Начать бой
+            <button className="button primary" type="button" disabled={busy || !encounter.groups.length} onClick={() => void prepareInitiative()}>
+              <Dices size={20} />
+              Бросить инициативу
             </button>
           </div>
         </div>
-        <EncounterDifficultyScale result={difficulty} />
+        <EncounterDifficultyScale result={difficulty} scopeKey={encounter.id} />
       </div>
       <form className="form-grid" onSubmit={(event) => void addGroup(event)}>
         <label className="wide">
@@ -325,10 +359,13 @@ export function EncounterBuilder({
                       </label>
                       <InitiativeSettingControls
                         advantage={setting?.initiativeAdvantage ?? false}
+                        disadvantage={setting?.initiativeDisadvantage ?? false}
                         override={setting?.initiativeOverride ?? null}
                         baseInitiative={player.initiativeMod}
                         busy={busy || !participating}
-                        onAdvantageChange={(initiativeAdvantage) => void savePlayerInitiative(player, setting, { initiativeAdvantage })}
+                        onRollModeChange={(initiativeAdvantage, initiativeDisadvantage) =>
+                          void savePlayerInitiative(player, setting, { initiativeAdvantage, initiativeDisadvantage })
+                        }
                         onOverrideSave={(initiativeOverride) => void savePlayerInitiative(player, setting, { initiativeOverride })}
                       />
                     </div>
@@ -386,10 +423,13 @@ export function EncounterBuilder({
                     </label>
                     <InitiativeSettingControls
                       advantage={group.initiativeAdvantage}
+                      disadvantage={group.initiativeDisadvantage}
                       override={group.initiativeOverride}
                       baseInitiative={template?.initiativeMod ?? 0}
                       busy={busy}
-                      onAdvantageChange={(initiativeAdvantage) => void saveGroupInitiative(group, { initiativeAdvantage })}
+                      onRollModeChange={(initiativeAdvantage, initiativeDisadvantage) =>
+                        void saveGroupInitiative(group, { initiativeAdvantage, initiativeDisadvantage })
+                      }
                       onOverrideSave={(initiativeOverride) => void saveGroupInitiative(group, { initiativeOverride })}
                     />
                     <HoldDeleteButton
@@ -405,6 +445,9 @@ export function EncounterBuilder({
           </div>
         </section>
       </div>
+      {preparedSession && (
+        <InitiativeSetupModal session={preparedSession} busy={busy} onReroll={prepareInitiative} onCancel={cancelInitiative} onConfirm={confirmInitiative} />
+      )}
     </>
   );
 }

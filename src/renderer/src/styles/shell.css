@@ -495,6 +495,14 @@ textarea::placeholder {
   min-height: 0;
 }
 
+.workspace.combat-workspace {
+  height: 100vh;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .players-workspace > .topbar,
 .players-workspace > .notice,
 .players-workspace > .tabs,
@@ -519,8 +527,8 @@ textarea::placeholder {
 
 .combat-toolbar {
   display: grid;
-  grid-template-columns: minmax(210px, 0.7fr) minmax(340px, 1fr) minmax(520px, auto);
-  align-items: start;
+  grid-template-columns: minmax(390px, 0.9fr) minmax(340px, 1fr) minmax(520px, auto);
+  align-items: center;
 }
 
 .combat-toolbar > * {
@@ -581,13 +589,47 @@ textarea::placeholder {
 
 .combat-heading {
   min-width: 0;
-  overflow: hidden;
+}
+
+.combat-toolbar > .combat-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-areas:
+    'eyebrow action'
+    'title action';
+  align-items: center;
+  gap: 6px 12px;
+  padding-right: 0;
+  overflow: visible;
+}
+
+.combat-toolbar > .combat-heading .eyebrow {
+  grid-area: eyebrow;
+}
+
+.combat-toolbar > .combat-heading h2 {
+  grid-area: title;
+  min-width: 0;
+}
+
+.combat-add-button {
+  grid-area: action;
+  align-self: center;
+  width: max-content;
+  max-width: none;
+  min-height: 38px;
+  margin-top: 0;
+  padding: 0 12px;
+  font-size: 14px;
+  white-space: nowrap;
 }
 
 .combat-active-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 18px;
   width: 100%;
   min-width: 0;
   margin-top: -6px;
@@ -602,11 +644,18 @@ textarea::placeholder {
   text-transform: uppercase;
 }
 
-.combat-active-bar span {
+.combat-active-turn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.combat-active-turn > span {
   flex: 0 0 auto;
 }
 
-.combat-active-bar strong {
+.combat-active-turn > strong {
   display: block;
   flex: 1 1 auto;
   min-width: 0;
@@ -616,6 +665,18 @@ textarea::placeholder {
   text-overflow: ellipsis;
   text-transform: none;
   white-space: nowrap;
+}
+
+.combat-active-bar .combat-hotkeys {
+  flex: 1 1 680px;
+  justify-content: flex-end;
+  min-width: 0;
+  margin-left: auto;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font-size: 12px;
+  text-transform: none;
 }
 
 .combat-hotkeys {
@@ -680,7 +741,7 @@ textarea::placeholder {
 
 @media (max-width: 1850px) {
   .combat-toolbar {
-    grid-template-columns: minmax(190px, 0.65fr) minmax(330px, 0.9fr) minmax(430px, 1.2fr);
+    grid-template-columns: minmax(390px, 1fr) minmax(330px, 0.9fr) minmax(430px, 1.2fr);
   }
 
   .combat-toolbar .toolbar-actions .button {
@@ -690,7 +751,7 @@ textarea::placeholder {
 
 @media (max-width: 1600px) {
   .combat-toolbar {
-    grid-template-columns: minmax(190px, 0.7fr) minmax(330px, 1fr);
+    grid-template-columns: minmax(390px, 1.15fr) minmax(330px, 1fr);
   }
 
   .combat-toolbar .toolbar-actions {

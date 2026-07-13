@@ -17,10 +17,18 @@ import {
   toCombatantParams,
   type Row
 } from './repositoryUtils';
-import { assignTurnOrder, calculateExperience, normalizeHp, tickTimedEffects, toPublicCombatants } from '@shared/combat';
-import { CONCENTRATION_STATUS_ID, UNCONSCIOUS_DEPENDENCY_STATUS_IDS, addStatusEffects, removeStatusEffects } from '@shared/statusEffects';
+import { assignTurnOrder, calculateExperience, normalizeHp, rollHitDiceExpression, tickTimedEffects, toPublicCombatants } from '@shared/combat';
+import {
+  CONCENTRATION_STATUS_ID,
+  INCAPACITATED_STATUS_ID,
+  UNCONSCIOUS_DEPENDENCY_STATUS_IDS,
+  addStatusEffects,
+  removeStatusEffects
+} from '@shared/statusEffects';
 import type {
+  AddCombatantsToCombatInput,
   CampaignDetail,
+  CombatInitiativeEntry,
   CompleteCombatOptions,
   CombatXpAward,
   CombatEffect,
@@ -30,7 +38,8 @@ import type {
   CompleteCombatResult,
   PublicFeatureCard,
   PublicCombatView,
-  PublicDisplaySettings
+  PublicDisplaySettings,
+  InitiativeExchangePrompt
 } from '@shared/types';
 
 /**
@@ -40,6 +49,7 @@ import type {
 export class CombatRepository {
   private readonly dismissedXpAwardSessionIds = new Set<string>();
   private readonly publicFeatureCards = new Map<string, PublicFeatureCard>();
+  private readonly initiativeExchangeSources = new Map<string, string>();
   private readonly creatures: CreatureRepository;
   private readonly encounters: EncounterRepository;
   private readonly players: PlayerRepository;
@@ -79,6 +89,15 @@ export class CombatRepository {
 
   /** Создаёт снимки всех участников и атомарно заменяет предыдущий активный бой кампании. */
   startCombat(encounterId: string): CombatSession {
+    return this.createCombat(encounterId, 'active');
+  }
+
+  /** Создаёт черновик боя с бросками, который ещё не виден игрокам. */
+  prepareCombat(encounterId: string): CombatSession {
+    return this.createCombat(encounterId, 'preparing');
+  }
+
+  private createCombat(encounterId: string, status: 'preparing' | 'active'): CombatSession {
     const encounter = this.encounters.saveEncounter({
       id: encounterId,
       campaignId: String(this.encounters.getRow(encounterId).campaign_id),
@@ -109,7 +128,9 @@ export class CombatRepository {
         baseMaxHp: player.maxHp,
         currentHp: player.maxHp,
         temporaryHp: 0,
-        initiative: setting?.initiativeOverride ?? rollPreparedInitiative(player.initiativeMod, Boolean(setting?.initiativeAdvantage)),
+        initiative:
+          setting?.initiativeOverride ??
+          rollPreparedInitiative(player.initiativeMod, Boolean(setting?.initiativeAdvantage), Boolean(setting?.initiativeDisadvantage)),
         initiativeMod: player.initiativeMod,
         initiativeGroupId: null,
         initiativeMode: 'individual',
@@ -157,7 +178,9 @@ export class CombatRepository {
     for (const group of groups) {
       const template = this.creatures.get(group.templateId);
       const sharedInitiative =
-        group.initiativeMode === 'group' ? (group.initiativeOverride ?? rollPreparedInitiative(template.initiativeMod, group.initiativeAdvantage)) : null;
+        group.initiativeMode === 'group'
+          ? (group.initiativeOverride ?? rollPreparedInitiative(template.initiativeMod, group.initiativeAdvantage, group.initiativeDisadvantage))
+          : null;
       for (let index = 0; index < group.quantity; index += 1) {
         const suffix = group.quantity > 1 ? ` ${index + 1}` : '';
         const maxHp = rollEncounterGroupHitPoints(group, template);
@@ -175,7 +198,10 @@ export class CombatRepository {
           baseMaxHp: maxHp,
           currentHp: maxHp,
           temporaryHp: 0,
-          initiative: sharedInitiative ?? group.initiativeOverride ?? rollPreparedInitiative(template.initiativeMod, group.initiativeAdvantage),
+          initiative:
+            sharedInitiative ??
+            group.initiativeOverride ??
+            rollPreparedInitiative(template.initiativeMod, group.initiativeAdvantage, group.initiativeDisadvantage),
           initiativeMod: template.initiativeMod,
           initiativeGroupId: group.initiativeMode === 'group' ? group.id : null,
           initiativeMode: group.initiativeMode,
@@ -195,29 +221,33 @@ export class CombatRepository {
     const activeCombatantId = orderedCombatants[0]?.id ?? null;
 
     this.database.sqlite.transaction(() => {
-      this.database.sqlite
-        .prepare('UPDATE combat_sessions SET status = ?, ended_at = ? WHERE campaign_id = ? AND status = ?')
-        .run('completed', timestamp, campaignId, 'active');
+      if (status === 'active') {
+        this.database.sqlite
+          .prepare('UPDATE combat_sessions SET status = ?, ended_at = ? WHERE campaign_id = ? AND status = ?')
+          .run('completed', timestamp, campaignId, 'active');
+      }
+      // Повторный бросок полностью заменяет прежний незапущенный черновик кампании.
+      this.database.sqlite.prepare("DELETE FROM combat_sessions WHERE campaign_id = ? AND status = 'preparing'").run(campaignId);
       this.database.sqlite
         .prepare(
           `
           INSERT INTO combat_sessions (
             id, campaign_id, encounter_id, round, status, active_combatant_id,
             total_xp, xp_per_player, xp_ally_count, started_at, ended_at
-          ) VALUES (?, ?, ?, 1, 'active', ?, 0, 0, 0, ?, NULL)
+          ) VALUES (?, ?, ?, 1, ?, ?, 0, 0, 0, ?, NULL)
         `
         )
-        .run(sessionId, campaignId, encounterId, activeCombatantId, timestamp);
+        .run(sessionId, campaignId, encounterId, status, activeCombatantId, timestamp);
 
       const statement = this.database.sqlite.prepare(
         `
         INSERT INTO combatants (
           id, session_id, template_id, player_id, name, side, is_ally, armor_class, base_armor_class,
-          max_hp, base_max_hp, current_hp, temporary_hp, initiative, initiative_mod, initiative_group_id, initiative_mode,
+          max_hp, base_max_hp, current_hp, temporary_hp, initiative, initiative_roll, initiative_swap_used, initiative_mod, initiative_group_id, initiative_mode,
           turn_order, effects_json, public_notes, public_name_visible, snapshot_json, defeated, escaped, visible
         ) VALUES (
           @id, @sessionId, @templateId, @playerId, @name, @side, @isAlly, @armorClass, @baseArmorClass,
-          @maxHp, @baseMaxHp, @currentHp, @temporaryHp, @initiative, @initiativeMod, @initiativeGroupId, @initiativeMode,
+          @maxHp, @baseMaxHp, @currentHp, @temporaryHp, @initiative, @initiativeRoll, @initiativeSwapUsed, @initiativeMod, @initiativeGroupId, @initiativeMode,
           @turnOrder, @effectsJson, @publicNotes, @publicNameVisible, @snapshotJson, @defeated, @escaped, @visible
         )
       `
@@ -228,6 +258,187 @@ export class CombatRepository {
     })();
 
     return this.getCombatSession(sessionId);
+  }
+
+  /**
+   * Фиксирует отредактированную инициативу и только после этого делает бой активным.
+   * Порядок и статус меняются одной транзакцией, поэтому публичное окно не увидит промежуточные значения.
+   */
+  confirmCombatInitiative(sessionId: string, entries: CombatInitiativeEntry[]): CombatSession {
+    const session = this.getCombatSession(sessionId);
+    if (session.status !== 'preparing') throw new Error('Подготовка инициативы уже завершена.');
+
+    const initiativeById = new Map(entries.map((entry) => [entry.combatantId, clamp(Math.round(entry.initiative), -100, 200)]));
+    const ordered = assignTurnOrder(
+      session.combatants.map((combatant) => ({ ...combatant, initiative: initiativeById.get(combatant.id) ?? combatant.initiative }))
+    );
+    const timestamp = now();
+
+    this.database.sqlite.transaction(() => {
+      this.database.sqlite
+        .prepare("UPDATE combat_sessions SET status = 'completed', ended_at = ? WHERE campaign_id = ? AND status = 'active'")
+        .run(timestamp, session.campaignId);
+      const rollById = new Map(entries.map((entry) => [entry.combatantId, entry.roll]));
+      const updateCombatant = this.database.sqlite.prepare(
+        'UPDATE combatants SET initiative = ?, initiative_roll = COALESCE(?, initiative_roll), turn_order = ? WHERE id = ? AND session_id = ?'
+      );
+      for (const combatant of ordered)
+        updateCombatant.run(combatant.initiative, rollById.get(combatant.id) ?? null, combatant.turnOrder, combatant.id, sessionId);
+      this.database.sqlite
+        .prepare("UPDATE combat_sessions SET status = 'active', round = 1, active_combatant_id = ?, started_at = ?, ended_at = NULL WHERE id = ?")
+        .run(ordered[0]?.id ?? null, timestamp, sessionId);
+    })();
+
+    this.initiativeExchangeSources.delete(sessionId);
+
+    return this.getCombatSession(sessionId);
+  }
+
+  /** Открывает выбор обмена и сначала сохраняет все ручные правки инициативы из мастерской модалки. */
+  beginInitiativeExchange(sessionId: string, sourceCombatantId: string, entries: CombatInitiativeEntry[]): CombatSession {
+    const session = this.syncPreparedInitiative(sessionId, entries);
+    this.assertExchangeSource(session, sourceCombatantId);
+    if (!this.getExchangeCandidates(session, sourceCombatantId).length) {
+      throw new Error('Нет доступных союзников для обмена инициативой.');
+    }
+    this.initiativeExchangeSources.set(sessionId, sourceCombatantId);
+    return this.getCombatSession(sessionId);
+  }
+
+  /** Меняет именно итоговые значения инициативы, сохраняя исходные броски d20 для понятного отображения формулы. */
+  swapCombatInitiative(sessionId: string, sourceCombatantId: string, targetCombatantId: string): CombatSession {
+    const session = this.getCombatSession(sessionId);
+    this.assertExchangeSource(session, sourceCombatantId);
+    if (this.initiativeExchangeSources.get(sessionId) !== sourceCombatantId) {
+      throw new Error('Выбор обмена инициативой уже закрыт.');
+    }
+    const target = this.getExchangeCandidates(session, sourceCombatantId).find((candidate) => candidate.id === targetCombatantId);
+    if (!target) throw new Error('С этим существом нельзя обменяться инициативой.');
+    const source = session.combatants.find((combatant) => combatant.id === sourceCombatantId)!;
+    const swapped = assignTurnOrder(
+      session.combatants.map((combatant) => {
+        if (combatant.id === source.id) return { ...combatant, initiative: target.initiative };
+        if (combatant.id === target.id) return { ...combatant, initiative: source.initiative };
+        return combatant;
+      })
+    );
+
+    this.database.sqlite.transaction(() => {
+      const update = this.database.sqlite.prepare(
+        'UPDATE combatants SET initiative = ?, initiative_swap_used = CASE WHEN id = ? THEN 1 ELSE initiative_swap_used END, turn_order = ? WHERE id = ? AND session_id = ?'
+      );
+      for (const combatant of swapped) update.run(combatant.initiative, source.id, combatant.turnOrder, combatant.id, sessionId);
+    })();
+    this.initiativeExchangeSources.delete(sessionId);
+    return this.getCombatSession(sessionId);
+  }
+
+  cancelInitiativeExchange(sessionId: string): CombatSession {
+    const session = this.getCombatSession(sessionId);
+    if (session.status !== 'preparing') throw new Error('Подготовка инициативы уже завершена.');
+    this.initiativeExchangeSources.delete(sessionId);
+    return session;
+  }
+
+  /** Удаляет незапущенный бой при закрытии модалки мастером. */
+  cancelCombatPreparation(sessionId: string): void {
+    this.initiativeExchangeSources.delete(sessionId);
+    this.database.sqlite.prepare("DELETE FROM combat_sessions WHERE id = ? AND status = 'preparing'").run(sessionId);
+  }
+
+  /**
+   * Добавляет NPC в активную сессию по локальному статблоку и заново вычисляет порядок инициативы.
+   * Текущий участник не меняется: мастер продолжает тот же ход, даже если новый NPC оказался выше в списке.
+   */
+  addCombatantsToCombat(input: AddCombatantsToCombatInput): CombatSession {
+    const session = this.getCombatSession(input.sessionId);
+    if (session.status !== 'active') throw new Error('Добавлять существ можно только в активный бой.');
+
+    if (!input.groups.length) throw new Error('Добавьте хотя бы одно существо.');
+    if (input.groups.reduce((sum, group) => sum + Math.max(0, Math.round(group.quantity)), 0) > 100) {
+      throw new Error('За один раз можно добавить не более 100 существ.');
+    }
+
+    const usedNames = new Set(session.combatants.map((combatant) => combatant.name));
+    const added: Combatant[] = [];
+
+    for (const group of input.groups) {
+      const template = this.creatures.get(group.templateId);
+      if (template.campaignId !== session.campaignId) throw new Error('Статблок принадлежит другой кампании.');
+
+      const quantity = clamp(Math.round(group.quantity), 1, 50);
+      const initiativeRoll = clamp(Math.round(group.initiativeRoll), 1, 20);
+      const initiativeBonus = clamp(Math.round(group.initiativeBonus), -50, 50);
+      const initiative = initiativeRoll + initiativeBonus;
+      const initiativeGroupId = quantity > 1 ? id() : null;
+
+      for (let index = 0; index < quantity; index += 1) {
+        let suffix = quantity > 1 ? index + 1 : 0;
+        let name = suffix ? `${template.name} ${suffix}` : template.name;
+        while (usedNames.has(name)) {
+          suffix = Math.max(2, suffix + 1);
+          name = `${template.name} ${suffix}`;
+        }
+        usedNames.add(name);
+        const maxHp =
+          group.hpMode === 'random'
+            ? rollHitDiceExpression(template.hitDice, template.hitPoints)
+            : group.hpMode === 'fixed' && group.hpOverride != null
+              ? clamp(Math.round(group.hpOverride), 1, 9999)
+              : Math.max(1, Math.round(template.hitPoints));
+
+        added.push({
+          id: id(),
+          sessionId: session.id,
+          templateId: template.id,
+          playerId: null,
+          name,
+          side: 'npc',
+          isAlly: false,
+          armorClass: template.armorClass,
+          baseArmorClass: template.armorClass,
+          maxHp,
+          baseMaxHp: maxHp,
+          currentHp: maxHp,
+          temporaryHp: 0,
+          initiative,
+          initiativeMod: initiativeBonus,
+          initiativeGroupId,
+          initiativeMode: quantity > 1 ? 'group' : 'individual',
+          turnOrder: session.combatants.length + added.length,
+          effects: [],
+          publicNotes: '',
+          publicNameVisible: false,
+          snapshot: template,
+          defeated: false,
+          escaped: false,
+          visible: true
+        });
+      }
+    }
+    const ordered = assignTurnOrder([...session.combatants, ...added]);
+
+    this.database.sqlite.transaction(() => {
+      const insert = this.database.sqlite.prepare(
+        `
+        INSERT INTO combatants (
+          id, session_id, template_id, player_id, name, side, is_ally, armor_class, base_armor_class,
+          max_hp, base_max_hp, current_hp, temporary_hp, initiative, initiative_roll, initiative_swap_used, initiative_mod, initiative_group_id, initiative_mode,
+          turn_order, effects_json, public_notes, public_name_visible, snapshot_json, defeated, escaped, visible
+        ) VALUES (
+          @id, @sessionId, @templateId, @playerId, @name, @side, @isAlly, @armorClass, @baseArmorClass,
+          @maxHp, @baseMaxHp, @currentHp, @temporaryHp, @initiative, @initiativeRoll, @initiativeSwapUsed, @initiativeMod, @initiativeGroupId, @initiativeMode,
+          @turnOrder, @effectsJson, @publicNotes, @publicNameVisible, @snapshotJson, @defeated, @escaped, @visible
+        )
+      `
+      );
+      for (const combatant of added) insert.run(toCombatantParams(combatant));
+
+      const updateOrder = this.database.sqlite.prepare('UPDATE combatants SET turn_order = ? WHERE id = ? AND session_id = ?');
+      for (const combatant of ordered) updateOrder.run(combatant.turnOrder, combatant.id, session.id);
+    })();
+
+    return this.getCombatSession(session.id);
   }
 
   getCombatSession(sessionId: string): CombatSession {
@@ -440,9 +651,74 @@ export class CombatRepository {
     const session = this.getActiveSession(campaignId);
     const featureCard = this.publicFeatureCards.get(campaignId) ?? null;
     const settings = this.getPublicDisplaySettings();
+    const preparingSession = this.getPreparingSession(campaignId);
+    const initiativeExchange = preparingSession ? this.getInitiativeExchangePrompt(preparingSession) : null;
     return session
-      ? { round: session.round, combatants: toPublicCombatants(session.combatants, session.activeCombatantId), settings, featureCard }
-      : { round: 1, combatants: [], settings, featureCard, xpAward: this.getLatestCompletedXpAward(campaignId) };
+      ? { round: session.round, combatants: toPublicCombatants(session.combatants, session.activeCombatantId), settings, featureCard, initiativeExchange }
+      : { round: 1, combatants: [], settings, featureCard, initiativeExchange, xpAward: this.getLatestCompletedXpAward(campaignId) };
+  }
+
+  private syncPreparedInitiative(sessionId: string, entries: CombatInitiativeEntry[]): CombatSession {
+    const session = this.getCombatSession(sessionId);
+    if (session.status !== 'preparing') throw new Error('Подготовка инициативы уже завершена.');
+    const entryById = new Map(entries.map((entry) => [entry.combatantId, entry]));
+    const ordered = assignTurnOrder(
+      session.combatants.map((combatant) => ({
+        ...combatant,
+        initiative: clamp(Math.round(entryById.get(combatant.id)?.initiative ?? combatant.initiative), -100, 200)
+      }))
+    );
+    this.database.sqlite.transaction(() => {
+      const update = this.database.sqlite.prepare(
+        'UPDATE combatants SET initiative = ?, initiative_roll = COALESCE(?, initiative_roll), turn_order = ? WHERE id = ? AND session_id = ?'
+      );
+      for (const combatant of ordered) {
+        update.run(combatant.initiative, entryById.get(combatant.id)?.roll ?? null, combatant.turnOrder, combatant.id, sessionId);
+      }
+    })();
+    return this.getCombatSession(sessionId);
+  }
+
+  private assertExchangeSource(session: CombatSession, sourceCombatantId: string): void {
+    if (session.status !== 'preparing') throw new Error('Обмен инициативой доступен только перед началом боя.');
+    const source = session.combatants.find((combatant) => combatant.id === sourceCombatantId);
+    const playerSnapshot = source?.snapshot && 'alertInitiativeSwap' in source.snapshot ? source.snapshot : null;
+    if (!source || source.side !== 'player' || !playerSnapshot?.alertInitiativeSwap) {
+      throw new Error('У персонажа нет черты «Бдительный: Обмен Инициативой».');
+    }
+    if (source.initiativeSwapUsed) throw new Error('Этот персонаж уже использовал обмен инициативой.');
+    if (this.isIncapacitated(source)) throw new Error('Недееспособный персонаж не может обмениваться инициативой.');
+  }
+
+  private getExchangeCandidates(session: CombatSession, sourceCombatantId: string): Combatant[] {
+    return session.combatants.filter(
+      (combatant) =>
+        combatant.id !== sourceCombatantId && (combatant.side === 'player' || combatant.isAlly) && !combatant.defeated && !this.isIncapacitated(combatant)
+    );
+  }
+
+  private isIncapacitated(combatant: Combatant): boolean {
+    return combatant.effects.some((effect) => effect.statusId === INCAPACITATED_STATUS_ID);
+  }
+
+  private getInitiativeExchangePrompt(session: CombatSession): InitiativeExchangePrompt | null {
+    const sourceCombatantId = this.initiativeExchangeSources.get(session.id);
+    if (!sourceCombatantId) return null;
+    const source = session.combatants.find((combatant) => combatant.id === sourceCombatantId);
+    if (!source) return null;
+    return {
+      sessionId: session.id,
+      sourceCombatantId,
+      sourceName: source.name,
+      sourceInitiative: source.initiative,
+      candidates: this.getExchangeCandidates(session, sourceCombatantId).map((candidate) => ({
+        combatantId: candidate.id,
+        name: candidate.name,
+        initiative: candidate.initiative,
+        side: candidate.side,
+        isAlly: candidate.isAlly
+      }))
+    };
   }
 
   showPublicFeatureCard(campaignId: string, card: PublicFeatureCard): void {
@@ -488,6 +764,13 @@ export class CombatRepository {
     return row ? this.rowToCombatSession(row) : null;
   }
 
+  private getPreparingSession(campaignId: string): CombatSession | null {
+    const row = this.database.sqlite
+      .prepare("SELECT * FROM combat_sessions WHERE campaign_id = ? AND status = 'preparing' ORDER BY started_at DESC LIMIT 1")
+      .get(campaignId) as Row | undefined;
+    return row ? this.rowToCombatSession(row) : null;
+  }
+
   private getLatestCompletedSession(campaignId: string): CombatSession | null {
     const row = this.database.sqlite
       .prepare("SELECT * FROM combat_sessions WHERE campaign_id = ? AND status = 'completed' ORDER BY ended_at DESC, started_at DESC LIMIT 1")
@@ -509,7 +792,7 @@ export class CombatRepository {
       campaignId: String(row.campaign_id),
       encounterId: String(row.encounter_id),
       round: Number(row.round),
-      status: row.status === 'completed' ? 'completed' : 'active',
+      status: row.status === 'completed' ? 'completed' : row.status === 'preparing' ? 'preparing' : 'active',
       activeCombatantId: row.active_combatant_id ? String(row.active_combatant_id) : null,
       totalXp: Number(row.total_xp),
       xpPerPlayer: Number(row.xp_per_player),

@@ -86,6 +86,7 @@ export class EncounterRepository {
     const existing = input.id
       ? (this.database.sqlite.prepare('SELECT * FROM encounter_creature_groups WHERE id = ?').get(input.id) as Row | undefined)
       : undefined;
+    const initiativeDisadvantage = Boolean(input.initiativeDisadvantage);
     const group: EncounterCreatureGroup = {
       id: input.id || id(),
       encounterId: input.encounterId,
@@ -93,7 +94,8 @@ export class EncounterRepository {
       displayName: input.displayName?.trim() || template.name,
       quantity: clampEncounterQuantity(normalized.quantity),
       initiativeMode: normalized.initiativeMode,
-      initiativeAdvantage: Boolean(input.initiativeAdvantage),
+      initiativeAdvantage: Boolean(input.initiativeAdvantage) && !initiativeDisadvantage,
+      initiativeDisadvantage,
       initiativeOverride: input.initiativeOverride == null ? null : clamp(input.initiativeOverride, -99, 99),
       hpMode: normalizeHitPointMode(input.hpMode, input.hpOverride),
       hpOverride: input.hpOverride == null ? null : clamp(input.hpOverride, 1, 9999),
@@ -107,10 +109,10 @@ export class EncounterRepository {
         `
         INSERT INTO encounter_creature_groups (
           id, encounter_id, template_id, display_name, quantity, initiative_mode,
-          initiative_advantage, initiative_override, hp_mode, hp_override, is_ally, created_at, updated_at
+          initiative_advantage, initiative_disadvantage, initiative_override, hp_mode, hp_override, is_ally, created_at, updated_at
         ) VALUES (
           @id, @encounterId, @templateId, @displayName, @quantity, @initiativeMode,
-          @initiativeAdvantage, @initiativeOverride, @hpMode, @hpOverride, @isAlly, @createdAt, @updatedAt
+          @initiativeAdvantage, @initiativeDisadvantage, @initiativeOverride, @hpMode, @hpOverride, @isAlly, @createdAt, @updatedAt
         )
         ON CONFLICT(id) DO UPDATE SET
           template_id = excluded.template_id,
@@ -118,6 +120,7 @@ export class EncounterRepository {
           quantity = excluded.quantity,
           initiative_mode = excluded.initiative_mode,
           initiative_advantage = excluded.initiative_advantage,
+          initiative_disadvantage = excluded.initiative_disadvantage,
           initiative_override = excluded.initiative_override,
           hp_mode = excluded.hp_mode,
           hp_override = excluded.hp_override,
@@ -140,12 +143,14 @@ export class EncounterRepository {
     const existing = this.database.sqlite
       .prepare('SELECT * FROM encounter_player_settings WHERE encounter_id = ? AND player_id = ?')
       .get(input.encounterId, input.playerId) as Row | undefined;
+    const initiativeDisadvantage = Boolean(input.initiativeDisadvantage);
     const setting: EncounterPlayerSetting = {
       id: existing ? String(existing.id) : id(),
       encounterId: input.encounterId,
       playerId: input.playerId,
       participating: input.participating ?? (existing ? Boolean(existing.participating) : true),
-      initiativeAdvantage: Boolean(input.initiativeAdvantage),
+      initiativeAdvantage: Boolean(input.initiativeAdvantage) && !initiativeDisadvantage,
+      initiativeDisadvantage,
       initiativeOverride: input.initiativeOverride == null ? null : clamp(input.initiativeOverride, -99, 99),
       createdAt: existing ? String(existing.created_at) : timestamp,
       updatedAt: timestamp
@@ -155,13 +160,14 @@ export class EncounterRepository {
       .prepare(
         `
         INSERT INTO encounter_player_settings (
-          id, encounter_id, player_id, participating, initiative_advantage, initiative_override, created_at, updated_at
+          id, encounter_id, player_id, participating, initiative_advantage, initiative_disadvantage, initiative_override, created_at, updated_at
         ) VALUES (
-          @id, @encounterId, @playerId, @participating, @initiativeAdvantage, @initiativeOverride, @createdAt, @updatedAt
+          @id, @encounterId, @playerId, @participating, @initiativeAdvantage, @initiativeDisadvantage, @initiativeOverride, @createdAt, @updatedAt
         )
         ON CONFLICT(encounter_id, player_id) DO UPDATE SET
           participating = excluded.participating,
           initiative_advantage = excluded.initiative_advantage,
+          initiative_disadvantage = excluded.initiative_disadvantage,
           initiative_override = excluded.initiative_override,
           updated_at = excluded.updated_at
       `

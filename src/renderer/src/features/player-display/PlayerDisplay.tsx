@@ -7,6 +7,7 @@ import { isConcentrating } from '../../shared/lib/combatEffects';
 import { XpAwardModal } from '../../shared/ui/XpAwardModal';
 import { formatHitPoints } from '../combat/model/hitPoints';
 import { PublicFeatureCardOverlay } from './PublicFeatureCardOverlay';
+import { InitiativeExchangeModal } from '../combat/InitiativeExchangeModal';
 
 const api = window.dndTracker;
 const PLAYER_CARD_STEP = 730;
@@ -32,6 +33,8 @@ export function PlayerDisplay(): JSX.Element {
   const [view, setView] = useState<PublicCombatView>({ round: 1, combatants: [], settings: DEFAULT_PUBLIC_DISPLAY_SETTINGS });
   const [introAnimating, setIntroAnimating] = useState(false);
   const [hpEvents, setHpEvents] = useState<Record<string, PublicHpEvent>>({});
+  const [exchangeBusy, setExchangeBusy] = useState(false);
+  const [exchangeError, setExchangeError] = useState('');
   const playerViewInitializedRef = useRef(false);
   const hadCombatRef = useRef(false);
   const introTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -41,6 +44,31 @@ export function PlayerDisplay(): JSX.Element {
   const hpEventTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const combatants = view.combatants;
   const publicSettings = view.settings ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS;
+
+  async function chooseInitiativeExchange(targetCombatantId: string): Promise<void> {
+    const prompt = view.initiativeExchange;
+    if (!prompt) return;
+    setExchangeBusy(true);
+    setExchangeError('');
+    try {
+      await api.swapCombatInitiative(prompt.sessionId, prompt.sourceCombatantId, targetCombatantId);
+    } catch (error) {
+      setExchangeError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setExchangeBusy(false);
+    }
+  }
+
+  async function cancelInitiativeExchange(): Promise<void> {
+    const prompt = view.initiativeExchange;
+    if (!prompt) return;
+    setExchangeBusy(true);
+    try {
+      await api.cancelInitiativeExchange(prompt.sessionId);
+    } finally {
+      setExchangeBusy(false);
+    }
+  }
   const activeIndex = Math.max(
     0,
     combatants.findIndex((combatant) => combatant.isCurrent)
@@ -210,6 +238,18 @@ export function PlayerDisplay(): JSX.Element {
       )}
       {view.featureCard && <PublicFeatureCardOverlay card={view.featureCard} />}
       {view.xpAward && <XpAwardModal award={view.xpAward} publicView />}
+      {view.initiativeExchange && (
+        <>
+          <InitiativeExchangeModal
+            prompt={view.initiativeExchange}
+            busy={exchangeBusy}
+            publicView
+            onSelect={(targetId) => void chooseInitiativeExchange(targetId)}
+            onCancel={() => void cancelInitiativeExchange()}
+          />
+          {exchangeError && <div className="initiative-exchange-error">{exchangeError}</div>}
+        </>
+      )}
     </main>
   );
 }

@@ -54,8 +54,8 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
       creatureType: 'Конструкт',
       alignment: 'Без мировоззрения',
       armorClass: 10,
-      initiativeMod: -20,
-      initiativeScore: 0,
+      initiativeMod: 2,
+      initiativeScore: 12,
       hitPoints: 10,
       hitDice: '2d8+1',
       speeds: '30 футов',
@@ -91,6 +91,15 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
       initiativeMode: 'individual',
       initiativeOverride: 9
     });
+    await api.saveEncounterGroup({
+      encounterId: encounter.id,
+      templateId: creature.id,
+      displayName: 'Учебный союзник',
+      quantity: 1,
+      initiativeMode: 'individual',
+      initiativeOverride: 8,
+      isAlly: true
+    });
   });
 
   await page.reload();
@@ -101,13 +110,17 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
   const encounterPanel = page.locator('.encounter-layout > .panel').nth(1);
   const stickyHeader = encounterPanel.locator('.encounter-sticky-header');
   const difficultyPanel = stickyHeader.locator('.encounter-difficulty-panel');
-  await stickyHeader.getByRole('button', { name: 'Свернуть оценку сложности' }).click();
   await expect(difficultyPanel).toHaveClass(/collapsed/);
   await expect(difficultyPanel.locator('.difficulty-scale')).toBeVisible();
   await expect(stickyHeader.getByText('Оценка сложности', { exact: true })).toBeHidden();
+  await expect(difficultyPanel.locator('.difficulty-warning-dot')).toBeVisible();
   await stickyHeader.getByRole('button', { name: 'Развернуть оценку сложности' }).click();
   await expect(difficultyPanel).not.toHaveClass(/collapsed/);
   await expect(stickyHeader.getByText('Оценка сложности', { exact: true })).toBeVisible();
+  await expect(stickyHeader.getByText(/В сцене есть союзники/)).toBeVisible();
+  await stickyHeader.getByRole('button', { name: 'Свернуть оценку сложности' }).click();
+  await expect(difficultyPanel.locator('.difficulty-warning-dot')).toBeHidden();
+  await stickyHeader.getByRole('button', { name: 'Развернуть оценку сложности' }).click();
   const encounterPanelBox = await encounterPanel.boundingBox();
   const initialHeaderBox = await stickyHeader.boundingBox();
   if (!encounterPanelBox || !initialHeaderBox) throw new Error('Не удалось определить положение закреплённого блока энкаунтера.');
@@ -123,26 +136,104 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
   await expect.poll(() => encounterPanel.evaluate((panel) => panel.scrollHeight > panel.clientHeight && panel.scrollTop > 0)).toBe(true);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   await expect.poll(async () => Math.round((await stickyHeader.boundingBox())?.y ?? -1)).toBe(Math.round(initialHeaderBox.y));
-  await expect(stickyHeader.getByRole('button', { name: 'Начать бой' })).toBeVisible();
+  await expect(stickyHeader.getByRole('button', { name: 'Бросить инициативу' })).toBeVisible();
   await expect(stickyHeader.getByText('Оценка сложности', { exact: true })).toBeVisible();
   await encounterPanel.evaluate((panel) => {
     panel.querySelector('[data-e2e-scroll-filler]')?.remove();
     panel.scrollTop = 0;
   });
-  await page.getByRole('button', { name: 'Бой', exact: true }).click();
+  await page.evaluate(async () => {
+    const api = window.dndTracker;
+    const campaign = (await api.listCampaigns())[0];
+    const encounter = (await api.getCampaignDetail(campaign.id)).encounters[0];
+    const allyGroup = encounter.groups.find((group) => group.isAlly);
+    if (allyGroup) await api.deleteEncounterGroup(allyGroup.id);
+  });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Бросить инициативу' })).toBeVisible();
 
   const playerWindowPromise = app.waitForEvent('window');
   await page.getByRole('button', { name: 'Экран игроков' }).click();
   const playerPage = await playerWindowPromise;
   await playerPage.waitForLoadState('domcontentloaded');
 
-  await page.getByRole('button', { name: 'Старт' }).click();
+  await page.getByRole('button', { name: 'Бросить инициативу' }).click();
+  const initiativeDialog = page.getByRole('dialog', { name: 'Порядок инициативы' });
+  await expect(initiativeDialog).toBeVisible();
+  await expect(playerPage.getByText('Бой ещё не начат')).toBeVisible();
+
+  const heroRoll = initiativeDialog.getByRole('spinbutton', { name: 'Бросок инициативы: Тестовый герой' });
+  const enemyRoll = initiativeDialog.getByRole('spinbutton', { name: 'Бросок инициативы: Учебный противник' });
+  await heroRoll.fill('1');
+  await enemyRoll.fill('20');
+  await enemyRoll.blur();
+  await expect(initiativeDialog.locator('.initiative-setup-card').first()).toContainText('Учебный противник');
+  await heroRoll.fill('8');
+  await enemyRoll.fill('7');
+  await enemyRoll.press('Enter');
+  await expect(initiativeDialog.locator('.initiative-setup-card').first()).toContainText('Тестовый герой');
+  await initiativeDialog.getByRole('button', { name: 'Начать бой' }).click();
   await expect(page.getByRole('heading', { name: 'Боевой порядок' })).toBeVisible();
   await expect(playerPage.getByText('Тестовый герой', { exact: true }).first()).toBeVisible();
   await playerPage.waitForTimeout(1_500);
 
+  await page.getByRole('button', { name: 'Добавить существо' }).click();
+  const addCombatantDialog = page.getByRole('dialog', { name: 'Добавить существ' });
+  await expect(addCombatantDialog.getByRole('textbox', { name: 'Выбрать существо из бестиария' })).toBeVisible();
+  await expect(addCombatantDialog.getByText('Бросок инициативы')).toBeVisible();
+  await addCombatantDialog.getByRole('button', { name: 'Закрыть' }).click();
+
   await expect(page).toHaveScreenshot('master-combat.png', { animations: 'disabled' });
   await expect(playerPage).toHaveScreenshot('player-display.png', { animations: 'disabled', maxDiffPixels: 1_000 });
+
+  const combatWorkspace = page.locator('.combat-workspace');
+  const combatHeader = page.locator('.combat-sticky-header');
+  await page.locator('.combat-layout').evaluate((layout) => {
+    const filler = document.createElement('div');
+    filler.dataset.e2eCombatScrollFiller = 'true';
+    filler.style.height = '1600px';
+    layout.append(filler);
+  });
+  await combatWorkspace.evaluate((workspace) => {
+    workspace.scrollTop = workspace.scrollHeight;
+  });
+  await expect.poll(() => combatWorkspace.evaluate((workspace) => workspace.scrollTop > 0)).toBe(true);
+  await expect(combatHeader).toHaveClass(/is-stuck/);
+  await expect.poll(() => page.evaluate(() => Boolean(document.elementFromPoint(window.innerWidth / 2, 1)?.closest('.combat-sticky-header')))).toBe(true);
+  await expect(combatHeader.getByRole('button', { name: 'Следующий ход' })).toBeVisible();
+  await page.locator('[data-e2e-combat-scroll-filler]').evaluate((filler) => filler.remove());
+  await combatWorkspace.evaluate((workspace) => {
+    workspace.scrollTop = 0;
+  });
+  await page.waitForTimeout(100);
+  await combatWorkspace.evaluate((workspace) => {
+    workspace.scrollTop = 0;
+  });
+  await expect.poll(() => combatWorkspace.evaluate((workspace) => workspace.scrollTop)).toBe(0);
+
+  await page.getByRole('button', { name: 'Добавить существо' }).click();
+  const reinforcementDialog = page.getByRole('dialog', { name: 'Добавить существ' });
+  const creatureSearch = reinforcementDialog.getByRole('textbox', { name: 'Выбрать существо из бестиария' });
+  await creatureSearch.fill('Учебный противник');
+  await creatureSearch.press('Enter');
+  await reinforcementDialog.getByLabel('Количество').fill('2');
+  await reinforcementDialog.getByLabel('Бросок инициативы').fill('20');
+  await reinforcementDialog.getByLabel('Бонус к инициативе').fill('3');
+  await reinforcementDialog.getByText('Преимущество', { exact: true }).click();
+  await reinforcementDialog.getByRole('button', { name: 'Способ определения хитов' }).click();
+  await page.getByRole('option', { name: /Указать вручную/ }).click();
+  await reinforcementDialog.getByLabel('Хиты каждого существа').fill('17');
+  await reinforcementDialog.getByRole('button', { name: 'Подтвердить' }).click();
+  const queuedCreature = reinforcementDialog.getByRole('button', { name: /Учебный противник.*2 шт/ });
+  await expect(queuedCreature).toBeVisible();
+  await queuedCreature.click();
+  await expect(reinforcementDialog.getByLabel('Количество')).toHaveValue('2');
+  await expect(reinforcementDialog.getByRole('button', { name: 'Преимущество', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(reinforcementDialog.getByLabel('Хиты каждого существа')).toHaveValue('17');
+  await expect(reinforcementDialog).toHaveScreenshot('add-combatants-modal.png', { animations: 'disabled' });
+  await reinforcementDialog.getByRole('button', { name: 'Добавить в бой' }).click();
+  await expect(page.getByText('Учебный противник 1', { exact: true })).toBeVisible();
+  await expect(page.getByText('Учебный противник 2', { exact: true })).toBeVisible();
 
   await page.evaluate(async () => {
     const api = window.dndTracker;

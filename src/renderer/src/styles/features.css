@@ -104,7 +104,7 @@
 .player-form {
   flex: 1;
   min-height: 0;
-  grid-template-rows: repeat(5, min-content) minmax(180px, 1fr) min-content;
+  grid-template-rows: repeat(6, min-content) minmax(180px, 1fr) min-content;
 }
 
 .player-notes-field {
@@ -308,6 +308,7 @@
 }
 
 .difficulty-collapse-button {
+  position: relative;
   display: inline-grid;
   place-items: center;
   width: 38px;
@@ -317,6 +318,20 @@
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(244, 218, 171, 0.2);
   border-radius: 8px;
+}
+
+.difficulty-warning-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  background: #e45b4f;
+  border: 2px solid #18110b;
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 2px rgba(228, 91, 79, 0.24),
+    0 0 12px rgba(228, 91, 79, 0.72);
 }
 
 .difficulty-collapse-button:hover,
@@ -560,10 +575,27 @@
   margin-top: 1px;
 }
 
+.difficulty-warning strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
 .difficulty-warning.allies {
   color: #ffedbd;
   background: rgba(137, 99, 30, 0.18);
   border-color: rgba(248, 196, 92, 0.34);
+}
+
+.difficulty-warning.advisory {
+  color: #ffedbd;
+  background: rgba(137, 99, 30, 0.18);
+  border-color: rgba(248, 196, 92, 0.34);
+}
+
+.difficulty-warning.powerful {
+  color: #ffd8d0;
+  background: rgba(126, 42, 36, 0.2);
+  border-color: rgba(231, 103, 86, 0.38);
 }
 
 .difficulty-warning.missing-xp {
@@ -986,25 +1018,82 @@
   flex: 0 0 auto;
 }
 
-.initiative-advantage-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 38px;
-  color: #cbb99d;
-  background: rgba(255, 255, 255, 0.055);
+.initiative-roll-mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.035);
   border: 1px solid rgba(244, 218, 171, 0.16);
   border-radius: 8px;
-  padding: 0 10px;
+}
+
+.initiative-roll-mode-button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 7px 10px;
+  color: #cbb99d;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font: inherit;
+  text-align: left;
+}
+
+.initiative-roll-mode-button > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.initiative-roll-mode-button strong {
+  color: inherit;
   font-size: 13px;
   font-weight: 900;
 }
 
-.initiative-advantage-toggle.active {
-  color: #18110b;
-  background: #f8d99a;
-  border-color: #f8d99a;
+.initiative-roll-mode-button small {
+  color: inherit;
+  font-size: 11px;
+  opacity: 0.76;
+}
+
+.initiative-roll-mode-button:not(:disabled):hover {
+  color: #fff7eb;
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.initiative-roll-mode-button.advantage.active {
+  color: #effff8;
+  background: rgba(48, 112, 89, 0.48);
+  border-color: rgba(108, 212, 174, 0.62);
+}
+
+.initiative-roll-mode-button.disadvantage.active {
+  color: #fff0ed;
+  background: rgba(132, 43, 36, 0.58);
+  border-color: rgba(238, 103, 86, 0.7);
+}
+
+.initiative-roll-mode-toggle.compact {
+  display: inline-grid;
+  width: auto;
+  padding: 3px;
+}
+
+.initiative-roll-mode-toggle.compact .initiative-roll-mode-button {
+  justify-content: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 8px;
+}
+
+.initiative-roll-mode-toggle.compact .initiative-roll-mode-button strong {
+  font-size: 12px;
 }
 
 .initiative-override-input {
@@ -1138,6 +1227,43 @@ label {
   font-weight: 800;
   line-height: 1.35;
   opacity: 0.78;
+}
+
+.player-feat-toggle {
+  z-index: 2;
+}
+
+.player-feat-tooltip {
+  position: absolute;
+  left: 14px;
+  bottom: calc(100% + 8px);
+  z-index: var(--z-popover, 80);
+  display: none !important;
+  width: min(560px, calc(100vw - 80px));
+  padding: 12px 14px;
+  color: #fff7eb;
+  background: #211a14;
+  border: 1px solid rgba(248, 217, 154, 0.34);
+  border-radius: 8px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.48);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.player-feat-toggle:hover .player-feat-tooltip,
+.player-feat-toggle:has(input:focus-visible) .player-feat-tooltip {
+  display: block !important;
+}
+
+.player-feat-badge {
+  padding: 4px 7px;
+  color: #18110b;
+  background: #f8d99a;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .ability-grid {
@@ -1300,7 +1426,7 @@ label {
 
   .player-form {
     gap: 10px;
-    grid-template-rows: repeat(5, min-content) minmax(100px, 1fr) min-content;
+    grid-template-rows: repeat(6, min-content) minmax(100px, 1fr) min-content;
   }
 }
 

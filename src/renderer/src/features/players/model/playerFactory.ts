@@ -12,6 +12,7 @@ export function emptyPlayer(campaignId: string): PlayerCharacter {
     initiativeMod: 0,
     passivePerception: 10,
     active: true,
+    alertInitiativeSwap: false,
     imageUrl: '',
     notes: '',
     createdAt: timestamp,

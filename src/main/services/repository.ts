@@ -6,8 +6,10 @@ import { CreatureRepository } from '../repositories/creatureRepository';
 import { EncounterRepository } from '../repositories/encounterRepository';
 import { PlayerRepository } from '../repositories/playerRepository';
 import type {
+  AddCombatantsToCombatInput,
   Campaign,
   CampaignDetail,
+  CombatInitiativeEntry,
   CombatSession,
   CombatantPatch,
   CompleteCombatOptions,
@@ -121,6 +123,34 @@ export class TrackerRepository {
 
   startCombat(encounterId: string): CombatSession {
     return this.combat.startCombat(encounterId);
+  }
+
+  prepareCombat(encounterId: string): CombatSession {
+    return this.combat.prepareCombat(encounterId);
+  }
+
+  confirmCombatInitiative(sessionId: string, entries: CombatInitiativeEntry[]): CombatSession {
+    return this.combat.confirmCombatInitiative(sessionId, entries);
+  }
+
+  beginInitiativeExchange(sessionId: string, sourceCombatantId: string, entries: CombatInitiativeEntry[]): CombatSession {
+    return this.combat.beginInitiativeExchange(sessionId, sourceCombatantId, entries);
+  }
+
+  swapCombatInitiative(sessionId: string, sourceCombatantId: string, targetCombatantId: string): CombatSession {
+    return this.combat.swapCombatInitiative(sessionId, sourceCombatantId, targetCombatantId);
+  }
+
+  cancelInitiativeExchange(sessionId: string): CombatSession {
+    return this.combat.cancelInitiativeExchange(sessionId);
+  }
+
+  cancelCombatPreparation(sessionId: string): void {
+    this.combat.cancelCombatPreparation(sessionId);
+  }
+
+  addCombatantsToCombat(input: AddCombatantsToCombatInput): CombatSession {
+    return this.combat.addCombatantsToCombat(input);
   }
 
   getCombatSession(sessionId: string): CombatSession {

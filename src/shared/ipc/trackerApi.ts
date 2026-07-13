@@ -1,6 +1,8 @@
 import type { Campaign, CreateCampaignInput } from '../domain/campaign';
 import type {
+  AddCombatantsToCombatInput,
   CampaignDetail,
+  CombatInitiativeEntry,
   CombatantPatch,
   CombatSession,
   CompleteCombatOptions,
@@ -47,6 +49,14 @@ export interface TrackerApi {
   saveEncounterLair: (input: SaveEncounterLairInput) => Promise<EncounterLair>;
   deleteEncounterLair: (encounterId: string) => Promise<void>;
   startCombat: (encounterId: string) => Promise<CombatSession>;
+  prepareCombat: (encounterId: string) => Promise<CombatSession>;
+  confirmCombatInitiative: (sessionId: string, entries: CombatInitiativeEntry[]) => Promise<CombatSession>;
+  beginInitiativeExchange: (sessionId: string, sourceCombatantId: string, entries: CombatInitiativeEntry[]) => Promise<CombatSession>;
+  swapCombatInitiative: (sessionId: string, sourceCombatantId: string, targetCombatantId: string) => Promise<CombatSession>;
+  cancelInitiativeExchange: (sessionId: string) => Promise<CombatSession>;
+  onCombatPreparation: (callback: (session: CombatSession | null) => void) => () => void;
+  cancelCombatPreparation: (sessionId: string) => Promise<void>;
+  addCombatantsToCombat: (input: AddCombatantsToCombatInput) => Promise<CombatSession>;
   getCombatSession: (sessionId: string) => Promise<CombatSession>;
   updateCombatant: (id: string, patch: CombatantPatch) => Promise<CombatSession>;
   reorderCombatants: (sessionId: string, orderedIds: string[]) => Promise<CombatSession>;

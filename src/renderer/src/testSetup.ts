@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
+import { DEFAULT_PUBLIC_DISPLAY_SETTINGS } from '@shared/types';
 
 Object.defineProperty(window, 'dndTracker', {
   configurable: true,
@@ -22,6 +23,10 @@ Object.defineProperty(window, 'dndTracker', {
     saveEncounterLair: vi.fn(),
     deleteEncounterLair: vi.fn(),
     startCombat: vi.fn(),
+    prepareCombat: vi.fn(),
+    confirmCombatInitiative: vi.fn(),
+    cancelCombatPreparation: vi.fn(),
+    addCombatantsToCombat: vi.fn(),
     getCombatSession: vi.fn(),
     updateCombatant: vi.fn(),
     reorderCombatants: vi.fn(),
@@ -38,8 +43,8 @@ Object.defineProperty(window, 'dndTracker', {
     openPlayerWindow: vi.fn(),
     getPlayerView: vi.fn(),
     onPlayerView: vi.fn(() => () => undefined),
-    getPublicDisplaySettings: vi.fn(),
-    savePublicDisplaySettings: vi.fn(),
+    getPublicDisplaySettings: vi.fn().mockResolvedValue(DEFAULT_PUBLIC_DISPLAY_SETTINGS),
+    savePublicDisplaySettings: vi.fn().mockResolvedValue(DEFAULT_PUBLIC_DISPLAY_SETTINGS),
     getUpdateStatus: vi.fn(),
     checkForUpdates: vi.fn(),
     downloadUpdate: vi.fn(),

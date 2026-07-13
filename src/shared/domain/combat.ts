@@ -1,5 +1,5 @@
 import type { Campaign } from './campaign';
-import type { CombatSide, CombatStatus, InitiativeMode } from './common';
+import type { CombatSide, CombatStatus, HitPointMode, InitiativeMode } from './common';
 import type { CreatureTemplate } from './creature';
 import type { Encounter, EncounterLair } from './encounter';
 import type { PlayerCharacter } from './player';
@@ -32,6 +32,48 @@ export interface CombatSession {
   combatants: Combatant[];
 }
 
+/** Финальное значение инициативы участника, подтверждённое мастером перед началом боя. */
+export interface CombatInitiativeEntry {
+  combatantId: string;
+  initiative: number;
+  roll?: number;
+}
+
+export interface InitiativeExchangeCandidate {
+  combatantId: string;
+  name: string;
+  initiative: number;
+  side: CombatSide;
+  isAlly: boolean;
+}
+
+/** Данные открытого выбора по черте «Бдительный», безопасные для экрана игроков. */
+export interface InitiativeExchangePrompt {
+  sessionId: string;
+  sourceCombatantId: string;
+  sourceName: string;
+  sourceInitiative: number;
+  candidates: InitiativeExchangeCandidate[];
+}
+
+/** Настройки одной подготовленной группы NPC в пакетном добавлении. */
+export interface AddCombatantGroupInput {
+  templateId: string;
+  quantity: number;
+  initiativeRoll: number;
+  initiativeBonus: number;
+  initiativeAdvantage: boolean;
+  initiativeDisadvantage?: boolean;
+  hpMode: HitPointMode;
+  hpOverride: number | null;
+}
+
+/** Пакет групп NPC, который добавляется в активный бой одной операцией. */
+export interface AddCombatantsToCombatInput {
+  sessionId: string;
+  groups: AddCombatantGroupInput[];
+}
+
 /**
  * Конкретный участник боя, отделённый от редактируемого шаблона.
  * `snapshot` фиксирует статблок на момент старта, поэтому дальнейшая правка бестиария не меняет текущий бой.
@@ -51,6 +93,8 @@ export interface Combatant {
   currentHp: number;
   temporaryHp: number;
   initiative: number;
+  initiativeRoll?: number;
+  initiativeSwapUsed?: boolean;
   initiativeMod: number;
   initiativeGroupId: string | null;
   initiativeMode: InitiativeMode;
@@ -112,6 +156,7 @@ export interface PublicCombatView {
   settings: PublicDisplaySettings;
   featureCard?: PublicFeatureCard | null;
   xpAward?: CombatXpAward | null;
+  initiativeExchange?: InitiativeExchangePrompt | null;
 }
 
 export interface CampaignDetail {
