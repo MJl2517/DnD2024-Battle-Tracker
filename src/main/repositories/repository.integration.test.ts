@@ -7,6 +7,7 @@ import type { AppDatabase } from '../services/db';
 import { openAppDatabase, openMemoryDatabase } from '../services/db';
 import { TrackerRepository } from '../services/repository';
 import { INCAPACITATED_STATUS_ID, PRONE_STATUS_ID, UNCONSCIOUS_STATUS_ID } from '@shared/statusEffects';
+import { DEFAULT_PUBLIC_DISPLAY_SETTINGS } from '@shared/types';
 
 let database: AppDatabase | null = null;
 let temporaryDirectory = '';
@@ -107,6 +108,102 @@ describe('TrackerRepository integration', () => {
     expect(tables.map((table) => table.name)).toEqual(
       expect.arrayContaining(['campaigns', 'player_characters', 'creature_templates', 'encounters', 'combat_sessions', 'combatants'])
     );
+  });
+
+  it('synchronizes and resets the turn timer only when turn timing changes', () => {
+    database = openMemoryDatabase();
+    const repository = new TrackerRepository(database);
+    repository.savePublicDisplaySettings({
+      ...DEFAULT_PUBLIC_DISPLAY_SETTINGS,
+      turnTimerEnabled: true,
+      turnTimerSeconds: 60,
+      skipNpcTurnTimer: true
+    });
+    const campaign = repository.createCampaign({ name: 'Timer campaign' });
+    const player = repository.savePlayer({
+      campaignId: campaign.id,
+      name: 'Timed hero',
+      level: 3,
+      armorClass: 16,
+      maxHp: 28,
+      initiativeMod: 2,
+      passivePerception: 13,
+      active: true
+    });
+    const creature = repository.saveCreature(creatureInput(campaign.id));
+    const encounter = repository.saveEncounter({ campaignId: campaign.id, name: 'Timer encounter' });
+    repository.saveEncounterPlayerSetting({ encounterId: encounter.id, playerId: player.id, participating: true });
+    repository.saveEncounterGroup({ encounterId: encounter.id, templateId: creature.id, quantity: 1, initiativeMode: 'individual' });
+
+    const preparation = repository.prepareCombat(encounter.id);
+    const hero = preparation.combatants.find((combatant) => combatant.playerId === player.id)!;
+    const enemy = preparation.combatants.find((combatant) => combatant.templateId === creature.id)!;
+    const started = repository.confirmCombatInitiative(preparation.id, [
+      { combatantId: hero.id, initiative: 20 },
+      { combatantId: enemy.id, initiative: 10 }
+    ]);
+
+    expect(started.activeCombatantId).toBe(hero.id);
+    expect(started.turnTimerDeadlineAt).not.toBeNull();
+    expect(repository.getPlayerView(campaign.id).turnTimerDeadlineAt).toBe(started.turnTimerDeadlineAt);
+
+    const unchanged = repository.updateCombatant(hero.id, { currentHp: hero.currentHp - 1 });
+    expect(unchanged.turnTimerDeadlineAt).toBe(started.turnTimerDeadlineAt);
+    expect(repository.setActiveCombatant(started.id, hero.id).turnTimerDeadlineAt).toBe(started.turnTimerDeadlineAt);
+
+    const paused = repository.toggleTurnTimerPause(started.id);
+    expect(paused.turnTimerDeadlineAt).toBeNull();
+    expect(paused.turnTimerPausedRemainingMs).toBeGreaterThan(58_000);
+    expect(paused.turnTimerPausedRemainingMs).toBeLessThanOrEqual(60_000);
+    expect(repository.getPlayerView(campaign.id).turnTimerPausedRemainingMs).toBe(paused.turnTimerPausedRemainingMs);
+    expect(new TrackerRepository(database).getCombatSession(started.id).turnTimerPausedRemainingMs).toBe(paused.turnTimerPausedRemainingMs);
+
+    const resumed = repository.toggleTurnTimerPause(started.id);
+    expect(resumed.turnTimerPausedRemainingMs).toBeNull();
+    expect(resumed.turnTimerDeadlineAt).not.toBeNull();
+
+    const pausedAgain = repository.toggleTurnTimerPause(started.id);
+    expect(pausedAgain.turnTimerPausedRemainingMs).not.toBeNull();
+    const enemyTurn = repository.advanceTurn(started.id);
+    expect(enemyTurn.activeCombatantId).toBe(enemy.id);
+    expect(enemyTurn.turnTimerDeadlineAt).toBeNull();
+    expect(enemyTurn.turnTimerPausedRemainingMs).toBeNull();
+
+    const returnedToHero = repository.retreatTurn(started.id);
+    expect(returnedToHero.activeCombatantId).toBe(hero.id);
+    expect(returnedToHero.turnTimerDeadlineAt).not.toBeNull();
+    expect(returnedToHero.turnTimerPausedRemainingMs).toBeNull();
+
+    database.sqlite.prepare('UPDATE combat_sessions SET turn_timer_deadline_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', started.id);
+    expect(repository.advanceRound(started.id).turnTimerDeadlineAt).not.toBe('2000-01-01T00:00:00.000Z');
+
+    const beforeDisplayOnlyChange = repository.getCombatSession(started.id).turnTimerDeadlineAt;
+    repository.savePublicDisplaySettings({
+      ...repository.getPublicDisplaySettings(),
+      showEnemyArmorClass: false
+    });
+    expect(repository.getCombatSession(started.id).turnTimerDeadlineAt).toBe(beforeDisplayOnlyChange);
+
+    repository.savePublicDisplaySettings({
+      ...repository.getPublicDisplaySettings(),
+      turnTimerSeconds: 90
+    });
+    const resetDeadline = repository.getCombatSession(started.id).turnTimerDeadlineAt;
+    expect(resetDeadline).not.toBe(beforeDisplayOnlyChange);
+    expect(Date.parse(resetDeadline!) - Date.now()).toBeGreaterThan(88_000);
+  });
+
+  it('normalizes timer defaults from settings saved by an older version', () => {
+    database = openMemoryDatabase();
+    database.sqlite
+      .prepare('INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)')
+      .run('public_display', JSON.stringify({ showEnemyArmorClass: false }), new Date().toISOString());
+
+    const settings = new TrackerRepository(database).getPublicDisplaySettings();
+    expect(settings).toEqual({
+      ...DEFAULT_PUBLIC_DISPLAY_SETTINGS,
+      showEnemyArmorClass: false
+    });
   });
 
   it('does not assign immune conditions manually or after defeat', () => {
@@ -223,9 +320,11 @@ describe('TrackerRepository integration', () => {
     database = openAppDatabase(temporaryDirectory);
     const campaign = database.sqlite.prepare('SELECT name, notes FROM campaigns WHERE id = ?').get('legacy-campaign') as { name: string; notes: string };
     const newTable = database.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'combat_sessions'").get();
+    const combatSessionColumns = database.sqlite.prepare('PRAGMA table_info(combat_sessions)').all() as Array<{ name: string }>;
 
     expect(campaign).toEqual({ name: 'Старая кампания', notes: 'Не удалять' });
     expect(newTable).toBeDefined();
+    expect(combatSessionColumns.map((column) => column.name)).toEqual(expect.arrayContaining(['turn_timer_deadline_at', 'turn_timer_paused_remaining_ms']));
   });
 });
 

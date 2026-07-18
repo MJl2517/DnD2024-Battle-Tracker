@@ -937,6 +937,197 @@
   width: min(680px, calc(100vw - 48px));
 }
 
+.release-history-backdrop {
+  z-index: 1120;
+}
+
+.release-history-modal {
+  display: grid;
+  width: min(900px, calc(100vw - 48px));
+  max-height: min(860px, calc(100vh - 56px));
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.release-history-modal.whats-new {
+  width: min(760px, calc(100vw - 48px));
+}
+
+.release-history-heading,
+.release-version-line,
+.release-history-footer {
+  display: flex;
+  align-items: center;
+}
+
+.release-history-heading {
+  gap: 13px;
+  color: #f8d99a;
+}
+
+.release-history-heading h2 {
+  color: #fff7eb;
+}
+
+.release-history-content {
+  min-height: 180px;
+  overflow-y: auto;
+  padding: 20px 8px 6px 0;
+}
+
+.release-list {
+  display: grid;
+  gap: 14px;
+}
+
+.release-card {
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(244, 218, 171, 0.16);
+  border-radius: 8px;
+}
+
+.release-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(244, 218, 171, 0.12);
+}
+
+.release-card-header h3 {
+  margin: 7px 0 0;
+  color: #fff7eb;
+  font-size: 21px;
+}
+
+.release-card-header time {
+  flex: 0 0 auto;
+  color: #bda98a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.release-version-line {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.release-version-line > strong {
+  color: #f8d99a;
+  font-size: 17px;
+}
+
+.release-current-badge,
+.release-prerelease-badge {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.release-current-badge {
+  color: #d8fff0;
+  background: rgba(45, 118, 91, 0.48);
+  border: 1px solid rgba(108, 212, 174, 0.32);
+}
+
+.release-prerelease-badge {
+  color: #ffe7bc;
+  background: rgba(137, 92, 31, 0.42);
+  border: 1px solid rgba(248, 217, 154, 0.26);
+}
+
+.release-notes {
+  display: grid;
+  gap: 9px;
+  padding-top: 15px;
+}
+
+.release-notes h4,
+.release-notes p {
+  margin: 0;
+}
+
+.release-notes h4 {
+  margin-top: 5px;
+  color: #f8d99a;
+  font-size: 16px;
+}
+
+.release-notes p {
+  color: #d6c7ad;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.release-note-item {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.release-note-item > span {
+  width: 6px;
+  height: 6px;
+  margin-top: 8px;
+  background: #f8d99a;
+  border-radius: 50%;
+}
+
+.release-history-state {
+  display: grid;
+  min-height: 170px;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  color: #d6c7ad;
+  text-align: center;
+}
+
+.release-history-state .spin {
+  color: #f8d99a;
+  animation: release-history-spin 900ms linear infinite;
+}
+
+.release-history-error {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.release-history-error > div {
+  display: grid;
+  gap: 5px;
+}
+
+.release-history-error span {
+  color: #e8c8c0;
+}
+
+.release-history-footer {
+  justify-content: flex-end;
+  padding-top: 18px;
+  border-top: 1px solid rgba(244, 218, 171, 0.14);
+}
+
+@keyframes release-history-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .release-history-state .spin {
+    animation: none;
+  }
+}
+
 .settings-list {
   display: grid;
   gap: 14px;
@@ -976,6 +1167,54 @@
 
 .display-settings-row {
   align-items: stretch;
+}
+
+.settings-heading-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #f8d99a;
+}
+
+.settings-number-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 10px 8px 14px;
+  color: #f8e9cb;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(244, 218, 171, 0.2);
+  border-radius: 8px;
+}
+
+.settings-number-field strong {
+  font-size: 14px;
+}
+
+.settings-number-field input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  color: #fff7eb;
+  background: rgba(20, 17, 14, 0.8);
+  border: 1px solid rgba(248, 217, 154, 0.3);
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 900;
+  text-align: center;
+}
+
+.settings-number-field:focus-within {
+  outline: 2px solid rgba(248, 217, 154, 0.82);
+  outline-offset: 2px;
+}
+
+.settings-number-field.disabled,
+.settings-toggle.disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .settings-toggle-list {

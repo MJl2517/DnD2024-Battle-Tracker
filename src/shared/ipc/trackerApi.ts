@@ -23,7 +23,7 @@ import type {
 } from '../domain/encounter';
 import type { PlayerCharacter, SavePlayerInput } from '../domain/player';
 import type { PublicDisplaySettings } from '../domain/settings';
-import type { AppUpdateStatus } from '../domain/update';
+import type { AppRelease, AppUpdateStatus } from '../domain/update';
 
 /**
  * Стабильный API, который preload безопасно публикует в renderer как window.dndTracker.
@@ -66,6 +66,7 @@ export interface TrackerApi {
   endRound: (sessionId: string) => Promise<CombatSession>;
   advanceRound: (sessionId: string) => Promise<CombatSession>;
   retreatRound: (sessionId: string) => Promise<CombatSession>;
+  toggleTurnTimerPause: (sessionId: string) => Promise<CombatSession>;
   completeCombat: (sessionId: string, options: CompleteCombatOptions) => Promise<CompleteCombatResult>;
   dismissCombatXpAward?: (sessionId: string) => Promise<void>;
   showPublicFeatureCard: (campaignId: string, card: PublicFeatureCard) => Promise<void>;
@@ -79,5 +80,6 @@ export interface TrackerApi {
   checkForUpdates: () => Promise<AppUpdateStatus>;
   downloadUpdate: () => Promise<AppUpdateStatus>;
   installUpdate: () => Promise<void>;
+  getReleaseHistory: () => Promise<AppRelease[]>;
   onUpdateStatus: (callback: (status: AppUpdateStatus) => void) => () => void;
 }

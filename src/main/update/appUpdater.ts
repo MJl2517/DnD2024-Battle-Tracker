@@ -1,7 +1,10 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { app, type BrowserWindow } from 'electron';
 import electronUpdater from 'electron-updater';
-import type { AppUpdateStatus } from '@shared/types';
+import type { AppRelease, AppUpdateStatus } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc/channels';
+import { normalizeReleaseVersion, parseCachedReleaseHistory, parseGitHubReleaseHistory } from './releaseHistory';
 
 const { autoUpdater } = electronUpdater;
 const UPDATE_REPOSITORY_OWNER = 'MJl2517';
@@ -22,6 +25,7 @@ export interface AppUpdater {
   check(): Promise<AppUpdateStatus>;
   download(): Promise<AppUpdateStatus>;
   install(): void;
+  getReleaseHistory(): Promise<AppRelease[]>;
   bindEvents(): void;
 }
 
@@ -30,7 +34,7 @@ export interface AppUpdater {
  * В dev-режиме выполняется только безопасная проверка версии, потому что исходники нельзя обновлять как установленный пакет.
  */
 export function createAppUpdater(getMainWindow: () => BrowserWindow | null): AppUpdater {
-  let status: AppUpdateStatus = { status: 'idle', currentVersion: app.getVersion() };
+  let status: AppUpdateStatus = { status: 'idle', currentVersion: app.getVersion(), isPackaged: app.isPackaged };
   let eventsBound = false;
 
   autoUpdater.autoDownload = false;
@@ -40,7 +44,7 @@ export function createAppUpdater(getMainWindow: () => BrowserWindow | null): App
   autoUpdater.autoRunAppAfterInstall = true;
 
   function setStatus(patch: Partial<AppUpdateStatus>): AppUpdateStatus {
-    status = { ...status, ...patch, currentVersion: app.getVersion() };
+    status = { ...status, ...patch, currentVersion: app.getVersion(), isPackaged: app.isPackaged };
     const window = getMainWindow();
     if (window && !window.isDestroyed()) window.webContents.send(IPC_CHANNELS.update.statusEvent, status);
     return status;
@@ -49,7 +53,7 @@ export function createAppUpdater(getMainWindow: () => BrowserWindow | null): App
   async function checkGitHubReleaseOnly(): Promise<AppUpdateStatus> {
     try {
       const release = await fetchLatestGitHubRelease();
-      const releaseVersion = normalizeVersion(release.tag_name);
+      const releaseVersion = normalizeReleaseVersion(release.tag_name);
       const hasNewerRelease = releaseVersion ? compareVersions(releaseVersion, app.getVersion()) > 0 : false;
       return setStatus({
         status: hasNewerRelease ? 'available' : 'not-available',
@@ -97,6 +101,30 @@ export function createAppUpdater(getMainWindow: () => BrowserWindow | null): App
     return status;
   }
 
+  /**
+   * История сначала обновляется из GitHub, затем сохраняется рядом с данными
+   * приложения. При временной потере сети пользователь увидит последний
+   * успешно загруженный список, а не пустое окно.
+   */
+  async function getReleaseHistory(): Promise<AppRelease[]> {
+    const cachePath = join(app.getPath('userData'), 'release-history.json');
+    try {
+      const releases = await fetchGitHubReleaseHistory();
+      try {
+        await writeFile(cachePath, JSON.stringify(releases, null, 2), 'utf8');
+      } catch {
+        // Ошибка кэша не должна скрывать уже полученную с GitHub историю.
+      }
+      return releases;
+    } catch (networkError) {
+      try {
+        return parseCachedReleaseHistory(JSON.parse(await readFile(cachePath, 'utf8')) as unknown);
+      } catch {
+        throw networkError;
+      }
+    }
+  }
+
   function bindEvents(): void {
     if (eventsBound) return;
     eventsBound = true;
@@ -142,6 +170,7 @@ export function createAppUpdater(getMainWindow: () => BrowserWindow | null): App
     download,
     // Явная установка запускает обычный NSIS wizard и после него снова открывает приложение.
     install: () => autoUpdater.quitAndInstall(false, true),
+    getReleaseHistory,
     bindEvents
   };
 }
@@ -173,15 +202,11 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function normalizeVersion(version: string | undefined): string {
-  return (version || '').trim().replace(/^v/i, '');
-}
-
 function compareVersions(left: string, right: string): number {
-  const leftParts = normalizeVersion(left)
+  const leftParts = normalizeReleaseVersion(left)
     .split('.')
     .map((part) => Number.parseInt(part, 10) || 0);
-  const rightParts = normalizeVersion(right)
+  const rightParts = normalizeReleaseVersion(right)
     .split('.')
     .map((part) => Number.parseInt(part, 10) || 0);
   for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index += 1) {
@@ -197,4 +222,12 @@ async function fetchLatestGitHubRelease(): Promise<GitHubRelease> {
   });
   if (!response.ok) throw new Error(`GitHub Releases вернул ${response.status}. Проверьте, что в репозитории есть опубликованный release.`);
   return (await response.json()) as GitHubRelease;
+}
+
+async function fetchGitHubReleaseHistory(): Promise<AppRelease[]> {
+  const response = await fetch(`https://api.github.com/repos/${UPDATE_REPOSITORY_OWNER}/${UPDATE_REPOSITORY_NAME}/releases?per_page=50`, {
+    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'DnD-2024-Battle-Tracker' }
+  });
+  if (!response.ok) throw new Error(`GitHub Releases вернул ${response.status}. Проверьте подключение к интернету.`);
+  return parseGitHubReleaseHistory(await response.json());
 }

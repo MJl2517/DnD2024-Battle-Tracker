@@ -189,6 +189,10 @@ export class TrackerRepository {
     return this.combat.retreatRound(sessionId);
   }
 
+  toggleTurnTimerPause(sessionId: string): CombatSession {
+    return this.combat.toggleTurnTimerPause(sessionId);
+  }
+
   completeCombat(sessionId: string, options?: CompleteCombatOptions): CompleteCombatResult {
     return this.combat.completeCombat(sessionId, options);
   }

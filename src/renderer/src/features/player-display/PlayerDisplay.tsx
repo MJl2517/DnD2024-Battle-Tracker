@@ -9,6 +9,7 @@ import { XpAwardModal } from '../../shared/ui/XpAwardModal';
 import { formatHitPoints } from '../combat/model/hitPoints';
 import { PublicFeatureCardOverlay } from './PublicFeatureCardOverlay';
 import { InitiativeExchangeModal } from '../combat/InitiativeExchangeModal';
+import { TurnTimer } from '../../shared/ui/TurnTimer';
 
 const api = window.dndTracker;
 const PLAYER_CARD_STEP = 730;
@@ -45,6 +46,8 @@ export function PlayerDisplay(): JSX.Element {
   const hpEventTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const combatants = view.combatants;
   const publicSettings = view.settings ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS;
+  const currentCombatant = combatants.find((combatant) => combatant.isCurrent);
+  const timerUnlimited = Boolean(publicSettings.skipNpcTurnTimer && currentCombatant?.side === 'npc');
 
   async function chooseInitiativeExchange(targetCombatantId: string): Promise<void> {
     const prompt = view.initiativeExchange;
@@ -180,7 +183,18 @@ export function PlayerDisplay(): JSX.Element {
           <p className="eyebrow">Экран игроков</p>
           <h1>Боевой порядок</h1>
         </div>
-        <Dices size={44} />
+        <div className="player-header-status">
+          {combatants.length > 0 && publicSettings.turnTimerEnabled && (
+            <TurnTimer
+              deadlineAt={view.turnTimerDeadlineAt}
+              durationSeconds={publicSettings.turnTimerSeconds}
+              pausedRemainingMilliseconds={view.turnTimerPausedRemainingMs}
+              unlimited={timerUnlimited}
+              variant="public"
+            />
+          )}
+          <Dices className="player-header-dice" size={44} />
+        </div>
       </header>
       {combatants.length === 0 ? (
         <section className="player-empty-panel">

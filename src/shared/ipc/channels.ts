@@ -5,6 +5,7 @@ export const IPC_CHANNELS = {
     check: 'update:check',
     download: 'update:download',
     install: 'update:install',
+    history: 'update:history',
     statusEvent: 'update:status'
   },
   settings: {
@@ -52,6 +53,7 @@ export const IPC_CHANNELS = {
     endRound: 'combat:end-round',
     advanceRound: 'combat:advance-round',
     retreatRound: 'combat:retreat-round',
+    toggleTurnTimerPause: 'combat:toggle-turn-timer-pause',
     complete: 'combat:complete',
     dismissXpAward: 'combat:dismiss-xp-award'
   },

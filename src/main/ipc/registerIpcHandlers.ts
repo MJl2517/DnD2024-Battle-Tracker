@@ -43,6 +43,7 @@ export function registerIpcHandlers({ repository, updater, windows }: IpcDepende
   handle(IPC_CHANNELS.update.check, () => updater.check());
   handle(IPC_CHANNELS.update.download, () => updater.download());
   handle(IPC_CHANNELS.update.install, () => updater.install());
+  handle(IPC_CHANNELS.update.history, () => updater.getReleaseHistory());
 
   handle(IPC_CHANNELS.settings.getPublicDisplay, () => repository.getPublicDisplaySettings());
   handle(IPC_CHANNELS.settings.savePublicDisplay, (_event, input: PublicDisplaySettings) => {
@@ -121,6 +122,7 @@ export function registerIpcHandlers({ repository, updater, windows }: IpcDepende
   handle(IPC_CHANNELS.combat.endRound, (_event, sessionId: string) => withBroadcast(repository.endRound(sessionId), broadcast));
   handle(IPC_CHANNELS.combat.advanceRound, (_event, sessionId: string) => withBroadcast(repository.advanceRound(sessionId), broadcast));
   handle(IPC_CHANNELS.combat.retreatRound, (_event, sessionId: string) => withBroadcast(repository.retreatRound(sessionId), broadcast));
+  handle(IPC_CHANNELS.combat.toggleTurnTimerPause, (_event, sessionId: string) => withBroadcast(repository.toggleTurnTimerPause(sessionId), broadcast));
   handle(IPC_CHANNELS.combat.complete, (_event, sessionId: string, options: CompleteCombatOptions) => {
     const result = repository.completeCombat(sessionId, options);
     broadcast(result.session.campaignId);

@@ -7,7 +7,8 @@ import type {
   CombatSession,
   Combatant,
   CompleteCombatOptions,
-  CompleteCombatResult
+  CompleteCombatResult,
+  PublicDisplaySettings
 } from '@shared/types';
 import { calculateExperience } from '@shared/combat';
 import { PanelTitle } from '../../shared/ui/PanelTitle';
@@ -18,13 +19,14 @@ import { CombatantCard } from './CombatantCard';
 import { AllyXpSelectionModal, FinishCombatModal } from './CombatModals';
 import { InitiativeSetupModal } from '../encounters/InitiativeSetupModal';
 import { AddCombatantModal } from './AddCombatantModal';
+import { TurnTimer } from '../../shared/ui/TurnTimer';
 
 const api = window.dndTracker;
 
 export function CombatPanel({
   detail,
   busy,
-  hideCreatureNames,
+  displaySettings,
   xpResult,
   onSession,
   onComplete,
@@ -34,7 +36,7 @@ export function CombatPanel({
 }: {
   detail: CampaignDetail;
   busy: boolean;
-  hideCreatureNames: boolean;
+  displaySettings: PublicDisplaySettings;
   xpResult: CompleteCombatResult | null;
   onSession: (session: CombatSession) => void;
   onComplete: (result: CompleteCombatResult) => void;
@@ -65,6 +67,7 @@ export function CombatPanel({
   const currentTurnNumber = ordered.length ? currentTurnIndex + 1 : 0;
   const absoluteTurnNumber = ordered.length ? (Math.max(1, session?.round ?? 1) - 1) * ordered.length + currentTurnNumber : 0;
   const activeCombatant = ordered[currentTurnIndex];
+  const timerUnlimited = Boolean(displaySettings.turnTimerEnabled && displaySettings.skipNpcTurnTimer && activeCombatant?.side === 'npc');
   const xpOptions: CompleteCombatOptions = {
     defeatedGiveXp,
     escapedXpMode,
@@ -286,6 +289,17 @@ export function CombatPanel({
               <strong>{absoluteTurnNumber}</strong>
               Всего ходов
             </span>
+            {displaySettings.turnTimerEnabled && (
+              <TurnTimer
+                deadlineAt={session.turnTimerDeadlineAt}
+                durationSeconds={displaySettings.turnTimerSeconds}
+                pausedRemainingMilliseconds={session.turnTimerPausedRemainingMs}
+                unlimited={timerUnlimited}
+                interactive={!timerUnlimited}
+                disabled={busy}
+                onTogglePause={() => void navigateCombat(() => api.toggleTurnTimerPause(session.id))}
+              />
+            )}
           </div>
           <div className="toolbar-actions">
             <button className="button secondary" type="button" disabled={busy} onClick={() => void navigateCombat(() => api.retreatTurn(session.id))}>
@@ -387,7 +401,7 @@ export function CombatPanel({
             campaignId={session.campaignId}
             active={session.activeCombatantId === combatant.id}
             busy={busy}
-            showNameVisibilityControl={hideCreatureNames}
+            showNameVisibilityControl={displaySettings.hideCreatureNames}
             onSetActive={() => void run(() => api.setActiveCombatant(session.id, combatant.id)).then((next) => next && onSession(next))}
             onDamage={(amount) => void update(combatant, applyDamageToHitPoints(combatant, amount))}
             onHeal={(amount) => void update(combatant, { currentHp: combatant.currentHp + amount })}

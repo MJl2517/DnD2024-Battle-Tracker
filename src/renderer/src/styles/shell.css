@@ -549,8 +549,8 @@ textarea::placeholder {
 
 .combat-counters {
   display: grid;
-  grid-template-columns: repeat(3, minmax(104px, 1fr));
-  align-items: stretch;
+  grid-template-columns: repeat(3, minmax(82px, 1fr)) auto;
+  align-items: center;
   gap: 10px;
 }
 

@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
+import { DEFAULT_PUBLIC_DISPLAY_SETTINGS } from '@shared/types';
 
 describe('PlayerDisplay', () => {
   beforeEach(() => {
@@ -8,6 +9,7 @@ describe('PlayerDisplay', () => {
     vi.mocked(window.dndTracker.getPlayerView).mockResolvedValue({
       round: 2,
       settings: {
+        ...DEFAULT_PUBLIC_DISPLAY_SETTINGS,
         showEnemyArmorClass: true,
         showEnemySpeeds: true,
         hideCreatureNames: false
@@ -44,10 +46,46 @@ describe('PlayerDisplay', () => {
     expect(screen.queryByText(/Хиты/)).not.toBeInTheDocument();
   });
 
+  it('shows an unlimited circular timer for npc turns when npc timing is disabled', async () => {
+    vi.mocked(window.dndTracker.getPlayerView).mockResolvedValue({
+      round: 2,
+      turnTimerDeadlineAt: null,
+      settings: {
+        ...DEFAULT_PUBLIC_DISPLAY_SETTINGS,
+        turnTimerEnabled: true,
+        skipNpcTurnTimer: true
+      },
+      combatants: [
+        {
+          id: 'npc',
+          name: 'Паровой мефит',
+          side: 'npc',
+          armorClass: 10,
+          initiative: 18,
+          turnOrder: 0,
+          effects: [],
+          publicNameVisible: false,
+          bloodied: false,
+          defeated: false,
+          escaped: false,
+          visible: true,
+          isCurrent: true
+        }
+      ]
+    });
+
+    render(<App />);
+
+    const timer = await screen.findByRole('timer', { name: 'Ход без ограничения времени' });
+    expect(timer).toHaveClass('unlimited');
+    expect(timer.querySelector('.turn-timer-infinity')).toBeInTheDocument();
+  });
+
   it('hides enemy armor class and speed when public settings are disabled', async () => {
     vi.mocked(window.dndTracker.getPlayerView).mockResolvedValue({
       round: 2,
       settings: {
+        ...DEFAULT_PUBLIC_DISPLAY_SETTINGS,
         showEnemyArmorClass: false,
         showEnemySpeeds: false,
         hideCreatureNames: false
@@ -84,6 +122,7 @@ describe('PlayerDisplay', () => {
     vi.mocked(window.dndTracker.getPlayerView).mockResolvedValue({
       round: 2,
       settings: {
+        ...DEFAULT_PUBLIC_DISPLAY_SETTINGS,
         showEnemyArmorClass: true,
         showEnemySpeeds: true,
         hideCreatureNames: true
@@ -128,5 +167,46 @@ describe('PlayerDisplay', () => {
     expect((await screen.findAllByText('Существо')).length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText('Паровой мефит')).not.toBeInTheDocument();
     expect(screen.getAllByText('Маг').length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('MasterApp release notes', () => {
+  beforeEach(() => {
+    window.location.hash = '';
+    window.localStorage.clear();
+    vi.mocked(window.dndTracker.listCampaigns).mockResolvedValue([]);
+    vi.mocked(window.dndTracker.getPublicDisplaySettings).mockResolvedValue(DEFAULT_PUBLIC_DISPLAY_SETTINGS);
+    vi.mocked(window.dndTracker.getUpdateStatus).mockResolvedValue({
+      status: 'idle',
+      currentVersion: '0.3.0',
+      isPackaged: true
+    });
+    vi.mocked(window.dndTracker.getReleaseHistory).mockResolvedValue([
+      {
+        version: '0.3.0',
+        tagName: 'v0.3.0',
+        name: 'Таймер хода',
+        notes: '- Добавлена пауза таймера',
+        prerelease: false
+      }
+    ]);
+  });
+
+  it('shows changes once after an installed version changes', async () => {
+    let firstRun!: ReturnType<typeof render>;
+    await act(async () => {
+      firstRun = render(<App />);
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Что нового' })).toBeVisible();
+    expect(screen.getByText('Добавлена пауза таймера')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Понятно' }));
+    expect(window.localStorage.getItem('dnd-tracker:last-seen-version')).toBe('0.3.0');
+    firstRun.unmount();
+
+    await act(async () => {
+      render(<App />);
+    });
+    expect(screen.queryByRole('heading', { name: 'Что нового' })).not.toBeInTheDocument();
   });
 });

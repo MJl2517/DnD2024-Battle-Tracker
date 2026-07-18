@@ -14,7 +14,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 28px;
   min-height: 0;
+}
+
+.player-header-status {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  flex: 0 0 auto;
 }
 
 .player-header .eyebrow {
@@ -25,7 +33,7 @@
   font-size: 64px;
 }
 
-.player-header svg {
+.player-header .player-header-dice {
   width: 64px;
   height: 64px;
 }
@@ -999,7 +1007,7 @@
   }
 
   .combat-counters {
-    grid-template-columns: repeat(3, minmax(98px, 1fr));
+    grid-template-columns: repeat(3, minmax(82px, 1fr)) auto;
   }
 
   .combat-controls {
@@ -1050,7 +1058,7 @@
   }
 
   .combat-counters {
-    grid-template-columns: repeat(2, minmax(120px, 1fr));
+    grid-template-columns: repeat(3, minmax(82px, 1fr)) auto;
   }
 
   .settings-row {

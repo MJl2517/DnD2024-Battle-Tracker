@@ -180,7 +180,9 @@ function runMigrations(db: Database.Database): void {
       xp_per_player INTEGER NOT NULL,
       xp_ally_count INTEGER NOT NULL DEFAULT 0,
       started_at TEXT NOT NULL,
-      ended_at TEXT
+      ended_at TEXT,
+      turn_timer_deadline_at TEXT,
+      turn_timer_paused_remaining_ms INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS combatants (
@@ -243,6 +245,8 @@ function runMigrations(db: Database.Database): void {
   addColumnIfMissing(db, 'combatants', 'base_max_hp', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing(db, 'combatants', 'temporary_hp', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'combatants', 'public_name_visible', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'combat_sessions', 'turn_timer_deadline_at', 'TEXT');
+  addColumnIfMissing(db, 'combat_sessions', 'turn_timer_paused_remaining_ms', 'INTEGER');
   addColumnIfMissing(db, 'combatants', 'is_ally', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'combatants', 'initiative_roll', 'INTEGER');
   addColumnIfMissing(db, 'combatants', 'initiative_swap_used', 'INTEGER NOT NULL DEFAULT 0');

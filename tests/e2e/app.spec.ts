@@ -100,6 +100,12 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
       initiativeOverride: 8,
       isAlly: true
     });
+    await api.savePublicDisplaySettings({
+      ...(await api.getPublicDisplaySettings()),
+      turnTimerEnabled: true,
+      turnTimerSeconds: 60,
+      skipNpcTurnTimer: true
+    });
   });
 
   await page.reload();
@@ -175,7 +181,17 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
   await initiativeDialog.getByRole('button', { name: 'Начать бой' }).click();
   await expect(page.getByRole('heading', { name: 'Боевой порядок' })).toBeVisible();
   await expect(playerPage.getByText('Тестовый герой', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('timer', { name: /До конца хода/ })).toBeVisible();
+  await expect(playerPage.getByRole('timer', { name: /До конца хода/ })).toBeVisible();
   await playerPage.waitForTimeout(1_500);
+
+  await page.getByRole('button', { name: 'Поставить таймер хода на паузу' }).click();
+  await expect(page.getByRole('timer', { name: /Таймер на паузе, осталось/ })).toBeVisible();
+  await expect(playerPage.getByRole('timer', { name: /Таймер на паузе, осталось/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Продолжить таймер хода' })).toBeVisible();
+  await page.getByRole('button', { name: 'Продолжить таймер хода' }).click();
+  await expect(page.getByRole('timer', { name: /До конца хода/ })).toBeVisible();
+  await expect(playerPage.getByRole('timer', { name: /До конца хода/ })).toBeVisible();
 
   await page.getByRole('button', { name: 'Добавить существо' }).click();
   const addCombatantDialog = page.getByRole('dialog', { name: 'Добавить существ' });
@@ -183,8 +199,14 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
   await expect(addCombatantDialog.getByText('Бросок инициативы')).toBeVisible();
   await addCombatantDialog.getByRole('button', { name: 'Закрыть' }).click();
 
-  await expect(page).toHaveScreenshot('master-combat.png', { animations: 'disabled' });
+  await expect(page).toHaveScreenshot('master-combat.png', { animations: 'disabled', maxDiffPixels: 1_000 });
   await expect(playerPage).toHaveScreenshot('player-display.png', { animations: 'disabled', maxDiffPixels: 1_000 });
+
+  await page.getByRole('button', { name: 'Следующий ход' }).click();
+  await expect(page.getByRole('timer', { name: 'Ход без ограничения времени' })).toBeVisible();
+  await expect(playerPage.getByRole('timer', { name: 'Ход без ограничения времени' })).toBeVisible();
+  await page.getByRole('button', { name: 'Ход назад' }).click();
+  await expect(page.getByRole('timer', { name: /До конца хода/ })).toBeVisible();
 
   const combatWorkspace = page.locator('.combat-workspace');
   const combatHeader = page.locator('.combat-sticky-header');

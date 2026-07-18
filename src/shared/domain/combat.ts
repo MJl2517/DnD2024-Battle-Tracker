@@ -29,6 +29,8 @@ export interface CombatSession {
   xpAllyCount: number;
   startedAt: string;
   endedAt: string | null;
+  turnTimerDeadlineAt: string | null;
+  turnTimerPausedRemainingMs: number | null;
   combatants: Combatant[];
 }
 
@@ -154,6 +156,8 @@ export interface PublicCombatView {
   round: number;
   combatants: PublicCombatant[];
   settings: PublicDisplaySettings;
+  turnTimerDeadlineAt?: string | null;
+  turnTimerPausedRemainingMs?: number | null;
   featureCard?: PublicFeatureCard | null;
   xpAward?: CombatXpAward | null;
   initiativeExchange?: InitiativeExchangePrompt | null;

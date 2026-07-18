@@ -127,7 +127,9 @@ export const combatSessions = sqliteTable('combat_sessions', {
   xpPerPlayer: integer('xp_per_player').notNull(),
   xpAllyCount: integer('xp_ally_count').notNull().default(0),
   startedAt: text('started_at').notNull(),
-  endedAt: text('ended_at')
+  endedAt: text('ended_at'),
+  turnTimerDeadlineAt: text('turn_timer_deadline_at'),
+  turnTimerPausedRemainingMs: integer('turn_timer_paused_remaining_ms')
 });
 
 export const combatants = sqliteTable('combatants', {

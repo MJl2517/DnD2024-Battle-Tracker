@@ -68,7 +68,12 @@ export class CombatRepository {
   }
 
   savePublicDisplaySettings(input: PublicDisplaySettings): PublicDisplaySettings {
-    return this.settings.savePublicDisplaySettings(input);
+    const previous = this.settings.getPublicDisplaySettings();
+    const saved = this.settings.savePublicDisplaySettings(input);
+    if (turnTimerSettingsChanged(previous, saved)) {
+      this.resetActiveTurnTimers(saved);
+    }
+    return saved;
   }
   getCampaignDetail(campaignId: string): CampaignDetail {
     const campaignRow = this.database.sqlite.prepare('SELECT * FROM campaigns WHERE id = ?').get(campaignId) as Row | undefined;
@@ -220,11 +225,14 @@ export class CombatRepository {
 
     const orderedCombatants = assignTurnOrder(combatants);
     const activeCombatantId = orderedCombatants[0]?.id ?? null;
+    const turnTimerDeadlineAt = status === 'active' ? createTurnTimerDeadline(this.getPublicDisplaySettings(), orderedCombatants[0], timestamp) : null;
 
     this.database.sqlite.transaction(() => {
       if (status === 'active') {
         this.database.sqlite
-          .prepare('UPDATE combat_sessions SET status = ?, ended_at = ? WHERE campaign_id = ? AND status = ?')
+          .prepare(
+            'UPDATE combat_sessions SET status = ?, ended_at = ?, turn_timer_deadline_at = NULL, turn_timer_paused_remaining_ms = NULL WHERE campaign_id = ? AND status = ?'
+          )
           .run('completed', timestamp, campaignId, 'active');
       }
       // Повторный бросок полностью заменяет прежний незапущенный черновик кампании.
@@ -234,11 +242,11 @@ export class CombatRepository {
           `
           INSERT INTO combat_sessions (
             id, campaign_id, encounter_id, round, status, active_combatant_id,
-            total_xp, xp_per_player, xp_ally_count, started_at, ended_at
-          ) VALUES (?, ?, ?, 1, ?, ?, 0, 0, 0, ?, NULL)
+            total_xp, xp_per_player, xp_ally_count, started_at, ended_at, turn_timer_deadline_at
+          ) VALUES (?, ?, ?, 1, ?, ?, 0, 0, 0, ?, NULL, ?)
         `
         )
-        .run(sessionId, campaignId, encounterId, status, activeCombatantId, timestamp);
+        .run(sessionId, campaignId, encounterId, status, activeCombatantId, timestamp, turnTimerDeadlineAt);
 
       const statement = this.database.sqlite.prepare(
         `
@@ -274,10 +282,13 @@ export class CombatRepository {
       session.combatants.map((combatant) => ({ ...combatant, initiative: initiativeById.get(combatant.id) ?? combatant.initiative }))
     );
     const timestamp = now();
+    const turnTimerDeadlineAt = createTurnTimerDeadline(this.getPublicDisplaySettings(), ordered[0], timestamp);
 
     this.database.sqlite.transaction(() => {
       this.database.sqlite
-        .prepare("UPDATE combat_sessions SET status = 'completed', ended_at = ? WHERE campaign_id = ? AND status = 'active'")
+        .prepare(
+          "UPDATE combat_sessions SET status = 'completed', ended_at = ?, turn_timer_deadline_at = NULL, turn_timer_paused_remaining_ms = NULL WHERE campaign_id = ? AND status = 'active'"
+        )
         .run(timestamp, session.campaignId);
       const rollById = new Map(entries.map((entry) => [entry.combatantId, entry.roll]));
       const updateCombatant = this.database.sqlite.prepare(
@@ -286,8 +297,10 @@ export class CombatRepository {
       for (const combatant of ordered)
         updateCombatant.run(combatant.initiative, rollById.get(combatant.id) ?? null, combatant.turnOrder, combatant.id, sessionId);
       this.database.sqlite
-        .prepare("UPDATE combat_sessions SET status = 'active', round = 1, active_combatant_id = ?, started_at = ?, ended_at = NULL WHERE id = ?")
-        .run(ordered[0]?.id ?? null, timestamp, sessionId);
+        .prepare(
+          "UPDATE combat_sessions SET status = 'active', round = 1, active_combatant_id = ?, started_at = ?, ended_at = NULL, turn_timer_deadline_at = ?, turn_timer_paused_remaining_ms = NULL WHERE id = ?"
+        )
+        .run(ordered[0]?.id ?? null, timestamp, turnTimerDeadlineAt, sessionId);
     })();
 
     this.initiativeExchangeSources.delete(sessionId);
@@ -536,7 +549,13 @@ export class CombatRepository {
     const exists = this.database.sqlite.prepare('SELECT id FROM combatants WHERE id = ? AND session_id = ?').get(combatantId, sessionId) as Row | undefined;
     if (!exists) throw new Error('Участник не входит в этот бой.');
 
-    this.database.sqlite.prepare('UPDATE combat_sessions SET active_combatant_id = ? WHERE id = ?').run(combatantId, sessionId);
+    const session = this.getCombatSession(sessionId);
+    if (session.activeCombatantId === combatantId) return session;
+    const nextCombatant = session.combatants.find((combatant) => combatant.id === combatantId);
+    const deadline = session.status === 'active' ? createTurnTimerDeadline(this.getPublicDisplaySettings(), nextCombatant) : null;
+    this.database.sqlite
+      .prepare('UPDATE combat_sessions SET active_combatant_id = ?, turn_timer_deadline_at = ?, turn_timer_paused_remaining_ms = NULL WHERE id = ?')
+      .run(combatantId, deadline, sessionId);
     return this.getCombatSession(sessionId);
   }
 
@@ -553,11 +572,14 @@ export class CombatRepository {
     if (!session.combatants.length) return session;
 
     const ordered = [...session.combatants].sort((a, b) => a.turnOrder - b.turnOrder);
+    const deadline = createTurnTimerDeadline(this.getPublicDisplaySettings(), ordered[0]);
     this.database.sqlite.transaction(() => {
       this.tickSessionTimedEffects(sessionId, 1);
       this.database.sqlite
-        .prepare('UPDATE combat_sessions SET active_combatant_id = ?, round = ? WHERE id = ?')
-        .run(ordered[0].id, session.round + 1, sessionId);
+        .prepare(
+          'UPDATE combat_sessions SET active_combatant_id = ?, round = ?, turn_timer_deadline_at = ?, turn_timer_paused_remaining_ms = NULL WHERE id = ?'
+        )
+        .run(ordered[0].id, session.round + 1, deadline, sessionId);
     })();
     return this.getCombatSession(sessionId);
   }
@@ -568,6 +590,34 @@ export class CombatRepository {
 
   retreatRound(sessionId: string): CombatSession {
     return this.shiftRound(sessionId, -1);
+  }
+
+  /**
+   * При паузе сохраняет остаток в базе, а при продолжении превращает его
+   * обратно в абсолютный дедлайн. Оба окна поэтому остаются синхронными без
+   * ежесекундных IPC-сообщений, а пауза переживает перезапуск приложения.
+   */
+  toggleTurnTimerPause(sessionId: string): CombatSession {
+    const session = this.getCombatSession(sessionId);
+    const settings = this.getPublicDisplaySettings();
+    const activeCombatant = session.combatants.find((combatant) => combatant.id === session.activeCombatantId);
+    if (session.status !== 'active' || !settings.turnTimerEnabled || !activeCombatant) return session;
+    if (settings.skipNpcTurnTimer && activeCombatant.side === 'npc') return session;
+
+    if (session.turnTimerPausedRemainingMs !== null) {
+      const deadline = new Date(Date.now() + Math.max(0, session.turnTimerPausedRemainingMs)).toISOString();
+      this.database.sqlite
+        .prepare('UPDATE combat_sessions SET turn_timer_deadline_at = ?, turn_timer_paused_remaining_ms = NULL WHERE id = ?')
+        .run(deadline, sessionId);
+    } else {
+      const parsedDeadline = session.turnTimerDeadlineAt ? Date.parse(session.turnTimerDeadlineAt) : Number.NaN;
+      const remainingMilliseconds = Number.isFinite(parsedDeadline) ? Math.max(0, parsedDeadline - Date.now()) : settings.turnTimerSeconds * 1000;
+      this.database.sqlite
+        .prepare('UPDATE combat_sessions SET turn_timer_deadline_at = NULL, turn_timer_paused_remaining_ms = ? WHERE id = ?')
+        .run(remainingMilliseconds, sessionId);
+    }
+
+    return this.getCombatSession(sessionId);
   }
 
   private moveTurn(sessionId: string, direction: 1 | -1): CombatSession {
@@ -587,12 +637,15 @@ export class CombatRepository {
       direction === 1 ? (currentIndex + 1 >= ordered.length ? 0 : currentIndex + 1) : currentIndex - 1 < 0 ? ordered.length - 1 : currentIndex - 1;
     const nextRound =
       direction === 1 && nextIndex === 0 ? session.round + 1 : direction === -1 && currentIndex === 0 ? Math.max(1, session.round - 1) : session.round;
+    const deadline = createTurnTimerDeadline(this.getPublicDisplaySettings(), ordered[nextIndex]);
 
     this.database.sqlite.transaction(() => {
       if (nextRound > session.round) this.tickSessionTimedEffects(sessionId, nextRound - session.round);
       this.database.sqlite
-        .prepare('UPDATE combat_sessions SET active_combatant_id = ?, round = ? WHERE id = ?')
-        .run(ordered[nextIndex].id, nextRound, sessionId);
+        .prepare(
+          'UPDATE combat_sessions SET active_combatant_id = ?, round = ?, turn_timer_deadline_at = ?, turn_timer_paused_remaining_ms = NULL WHERE id = ?'
+        )
+        .run(ordered[nextIndex].id, nextRound, deadline, sessionId);
     })();
     return this.getCombatSession(sessionId);
   }
@@ -604,9 +657,13 @@ export class CombatRepository {
     const nextRound = Math.max(1, session.round + direction);
     if (nextRound === session.round) return session;
 
+    const activeCombatant = session.combatants.find((combatant) => combatant.id === session.activeCombatantId);
+    const deadline = createTurnTimerDeadline(this.getPublicDisplaySettings(), activeCombatant);
     this.database.sqlite.transaction(() => {
       if (nextRound > session.round) this.tickSessionTimedEffects(sessionId, nextRound - session.round);
-      this.database.sqlite.prepare('UPDATE combat_sessions SET round = ? WHERE id = ?').run(nextRound, sessionId);
+      this.database.sqlite
+        .prepare('UPDATE combat_sessions SET round = ?, turn_timer_deadline_at = ?, turn_timer_paused_remaining_ms = NULL WHERE id = ?')
+        .run(nextRound, deadline, sessionId);
     })();
     return this.getCombatSession(sessionId);
   }
@@ -635,7 +692,8 @@ export class CombatRepository {
       .prepare(
         `
         UPDATE combat_sessions
-        SET status = 'completed', total_xp = ?, xp_per_player = ?, xp_ally_count = ?, ended_at = ?
+        SET status = 'completed', total_xp = ?, xp_per_player = ?, xp_ally_count = ?, ended_at = ?,
+            turn_timer_deadline_at = NULL, turn_timer_paused_remaining_ms = NULL
         WHERE id = ?
       `
       )
@@ -658,8 +716,25 @@ export class CombatRepository {
     const preparingSession = this.getPreparingSession(campaignId);
     const initiativeExchange = preparingSession ? this.getInitiativeExchangePrompt(preparingSession) : null;
     return session
-      ? { round: session.round, combatants: toPublicCombatants(session.combatants, session.activeCombatantId), settings, featureCard, initiativeExchange }
-      : { round: 1, combatants: [], settings, featureCard, initiativeExchange, xpAward: this.getLatestCompletedXpAward(campaignId) };
+      ? {
+          round: session.round,
+          combatants: toPublicCombatants(session.combatants, session.activeCombatantId),
+          settings,
+          turnTimerDeadlineAt: session.turnTimerDeadlineAt,
+          turnTimerPausedRemainingMs: session.turnTimerPausedRemainingMs,
+          featureCard,
+          initiativeExchange
+        }
+      : {
+          round: 1,
+          combatants: [],
+          settings,
+          turnTimerDeadlineAt: null,
+          turnTimerPausedRemainingMs: null,
+          featureCard,
+          initiativeExchange,
+          xpAward: this.getLatestCompletedXpAward(campaignId)
+        };
   }
 
   private syncPreparedInitiative(sessionId: string, entries: CombatInitiativeEntry[]): CombatSession {
@@ -782,6 +857,29 @@ export class CombatRepository {
     return row ? this.rowToCombatSession(row) : null;
   }
 
+  /** Перезапускает таймеры активных сессий после изменения глобальных настроек таймера. */
+  private resetActiveTurnTimers(settings: PublicDisplaySettings): void {
+    const rows = this.database.sqlite
+      .prepare(
+        `
+        SELECT sessions.id, combatants.side
+        FROM combat_sessions AS sessions
+        LEFT JOIN combatants ON combatants.id = sessions.active_combatant_id
+        WHERE sessions.status = 'active'
+      `
+      )
+      .all() as Row[];
+    const timestamp = now();
+    const update = this.database.sqlite.prepare('UPDATE combat_sessions SET turn_timer_deadline_at = ?, turn_timer_paused_remaining_ms = NULL WHERE id = ?');
+
+    this.database.sqlite.transaction(() => {
+      for (const row of rows) {
+        const activeCombatant = row.side === 'player' ? ({ side: 'player' } as const) : row.side === 'npc' ? ({ side: 'npc' } as const) : undefined;
+        update.run(createTurnTimerDeadline(settings, activeCombatant, timestamp), String(row.id));
+      }
+    })();
+  }
+
   private rowToCombatSession(row: Row): CombatSession {
     const lair = this.encounters.getLair(String(row.encounter_id));
     const combatants = this.database.sqlite
@@ -803,7 +901,27 @@ export class CombatRepository {
       xpAllyCount: Number(row.xp_ally_count ?? 0),
       startedAt: String(row.started_at),
       endedAt: row.ended_at ? String(row.ended_at) : null,
+      turnTimerDeadlineAt: row.turn_timer_deadline_at ? String(row.turn_timer_deadline_at) : null,
+      turnTimerPausedRemainingMs:
+        row.turn_timer_paused_remaining_ms === null || row.turn_timer_paused_remaining_ms === undefined
+          ? null
+          : Math.max(0, Number(row.turn_timer_paused_remaining_ms)),
       combatants
     };
   }
+}
+
+function turnTimerSettingsChanged(previous: PublicDisplaySettings, next: PublicDisplaySettings): boolean {
+  return (
+    previous.turnTimerEnabled !== next.turnTimerEnabled ||
+    previous.turnTimerSeconds !== next.turnTimerSeconds ||
+    previous.skipNpcTurnTimer !== next.skipNpcTurnTimer
+  );
+}
+
+/** Вычисляет абсолютный срок хода, общий для мастерского и публичного окон. */
+function createTurnTimerDeadline(settings: PublicDisplaySettings, combatant: Pick<Combatant, 'side'> | undefined, startedAt = now()): string | null {
+  if (!settings.turnTimerEnabled || !combatant) return null;
+  if (settings.skipNpcTurnTimer && combatant.side === 'npc') return null;
+  return new Date(Date.parse(startedAt) + settings.turnTimerSeconds * 1000).toISOString();
 }

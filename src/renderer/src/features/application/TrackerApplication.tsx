@@ -1,18 +1,27 @@
 import { useEffect, useState } from 'react';
 import { Activity, BookOpen, ChevronLeft, ChevronRight, MonitorUp, Settings, Swords, Users, X } from 'lucide-react';
-import { DEFAULT_PUBLIC_DISPLAY_SETTINGS, type Campaign, type CampaignDetail, type CompleteCombatResult, type PublicDisplaySettings } from '@shared/types';
+import {
+  DEFAULT_PUBLIC_DISPLAY_SETTINGS,
+  type AppRelease,
+  type Campaign,
+  type CampaignDetail,
+  type CompleteCombatResult,
+  type PublicDisplaySettings
+} from '@shared/types';
 import { CampaignSwitcher, EmptyCampaignState, TabButton } from './CampaignNavigation';
 import { PlayersPanel } from '../players/PlayersPanel';
 import { LibraryPanel } from '../bestiary/BestiaryPanel';
 import { EncountersPanel } from '../encounters/EncountersPanel';
 import { SettingsModal } from '../settings/SettingsModal';
 import { CombatPanel } from '../combat/CombatPanel';
+import { ReleaseHistoryModal } from '../updates/ReleaseHistoryModal';
 import { getUserFacingErrorMessage } from '../../shared/lib/errors';
 export { PlayerDisplay } from '../player-display/PlayerDisplay';
 
 type TabKey = 'combat' | 'encounters' | 'library' | 'players';
 
 const api = window.dndTracker;
+const LAST_SEEN_VERSION_KEY = 'dnd-tracker:last-seen-version';
 
 /**
  * Корневая композиция мастерского окна.
@@ -29,6 +38,7 @@ export function MasterApp(): JSX.Element {
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [displaySettings, setDisplaySettings] = useState<PublicDisplaySettings>(DEFAULT_PUBLIC_DISPLAY_SETTINGS);
+  const [whatsNew, setWhatsNew] = useState<{ release: AppRelease; currentVersion: string } | null>(null);
 
   async function loadCampaigns(preferredId?: string): Promise<void> {
     const nextCampaigns = await api.listCampaigns();
@@ -83,6 +93,44 @@ export function MasterApp(): JSX.Element {
     void api.getPublicDisplaySettings().then(setDisplaySettings);
     // Initial bootstrap only; later campaign changes go through explicit actions below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function detectInstalledUpdate(): Promise<void> {
+      const status = await api.getUpdateStatus();
+      if (!status?.isPackaged) return;
+
+      const currentVersion = normalizeVersion(status.currentVersion);
+      const lastSeenVersion = normalizeVersion(window.localStorage.getItem(LAST_SEEN_VERSION_KEY) ?? '');
+      if (!currentVersion || currentVersion === lastSeenVersion) return;
+
+      let release: AppRelease | undefined;
+      try {
+        const history = await api.getReleaseHistory();
+        release = history.find((item) => normalizeVersion(item.version) === currentVersion);
+      } catch {
+        // Даже без сети сообщаем о завершённом обновлении; историю можно повторно загрузить из настроек.
+      }
+
+      if (cancelled) return;
+      setWhatsNew({
+        currentVersion,
+        release: release ?? {
+          version: currentVersion,
+          tagName: `v${currentVersion}`,
+          name: `Версия ${currentVersion} установлена`,
+          notes: 'Обновление успешно установлено. Подробную историю изменений можно открыть в настройках.',
+          prerelease: false
+        }
+      });
+    }
+
+    void detectInstalledUpdate();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const campaign = detail?.campaign;
@@ -198,7 +246,7 @@ export function MasterApp(): JSX.Element {
               <CombatPanel
                 detail={detail}
                 busy={busy}
-                hideCreatureNames={displaySettings.hideCreatureNames}
+                displaySettings={displaySettings}
                 xpResult={xpResult}
                 onSession={(session) => {
                   setDetail({ ...detail, activeSession: session });
@@ -219,7 +267,22 @@ export function MasterApp(): JSX.Element {
           </>
         )}
       </main>
-      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} onDisplaySettingsChange={setDisplaySettings} />}
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} onDisplaySettingsChange={setDisplaySettings} onSettingsSaved={refresh} />}
+      {whatsNew && (
+        <ReleaseHistoryModal
+          mode="whats-new"
+          releases={[whatsNew.release]}
+          currentVersion={whatsNew.currentVersion}
+          onClose={() => {
+            window.localStorage.setItem(LAST_SEEN_VERSION_KEY, whatsNew.currentVersion);
+            setWhatsNew(null);
+          }}
+        />
+      )}
     </div>
   );
+}
+
+function normalizeVersion(version: string): string {
+  return version.trim().replace(/^v/i, '');
 }

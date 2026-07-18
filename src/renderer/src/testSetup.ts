@@ -40,6 +40,7 @@ Object.defineProperty(window, 'dndTracker', {
     endRound: vi.fn(),
     advanceRound: vi.fn(),
     retreatRound: vi.fn(),
+    toggleTurnTimerPause: vi.fn(),
     completeCombat: vi.fn(),
     dismissCombatXpAward: vi.fn(),
     showPublicFeatureCard: vi.fn(),
@@ -53,6 +54,7 @@ Object.defineProperty(window, 'dndTracker', {
     checkForUpdates: vi.fn(),
     downloadUpdate: vi.fn(),
     installUpdate: vi.fn(),
+    getReleaseHistory: vi.fn(),
     onUpdateStatus: vi.fn(() => () => undefined)
   }
 });

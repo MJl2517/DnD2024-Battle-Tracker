@@ -307,7 +307,10 @@ export function normalizePublicDisplaySettings(input: Partial<PublicDisplaySetti
   return {
     showEnemyArmorClass: input.showEnemyArmorClass ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS.showEnemyArmorClass,
     showEnemySpeeds: input.showEnemySpeeds ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS.showEnemySpeeds,
-    hideCreatureNames: input.hideCreatureNames ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS.hideCreatureNames
+    hideCreatureNames: input.hideCreatureNames ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS.hideCreatureNames,
+    turnTimerEnabled: input.turnTimerEnabled ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS.turnTimerEnabled,
+    turnTimerSeconds: clamp(input.turnTimerSeconds ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS.turnTimerSeconds, 5, 3600),
+    skipNpcTurnTimer: input.skipNpcTurnTimer ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS.skipNpcTurnTimer
   };
 }
 

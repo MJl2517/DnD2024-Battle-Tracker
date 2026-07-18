@@ -62,6 +62,7 @@ const api: TrackerApi = {
   endRound: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.combat.endRound, sessionId),
   advanceRound: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.combat.advanceRound, sessionId),
   retreatRound: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.combat.retreatRound, sessionId),
+  toggleTurnTimerPause: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.combat.toggleTurnTimerPause, sessionId),
   completeCombat: (sessionId: string, options: CompleteCombatOptions) => ipcRenderer.invoke(IPC_CHANNELS.combat.complete, sessionId, options),
   dismissCombatXpAward: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.combat.dismissXpAward, sessionId),
   showPublicFeatureCard: (campaignId: string, card: PublicFeatureCard) => ipcRenderer.invoke(IPC_CHANNELS.playerWindow.showFeatureCard, campaignId, card),
@@ -79,6 +80,7 @@ const api: TrackerApi = {
   checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.update.check),
   downloadUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.update.download),
   installUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.update.install),
+  getReleaseHistory: () => ipcRenderer.invoke(IPC_CHANNELS.update.history),
   onUpdateStatus: (callback: (status: AppUpdateStatus) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: AppUpdateStatus): void => callback(status);
     ipcRenderer.on(IPC_CHANNELS.update.statusEvent, listener);
