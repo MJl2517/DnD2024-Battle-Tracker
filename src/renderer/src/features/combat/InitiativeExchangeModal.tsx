@@ -1,5 +1,6 @@
 import { RefreshCw, Shield, UserRound, X } from 'lucide-react';
 import type { InitiativeExchangePrompt } from '@shared/types';
+import { useModalFocus } from '../../shared/ui/useModalFocus';
 
 export function InitiativeExchangeModal({
   prompt,
@@ -14,9 +15,12 @@ export function InitiativeExchangeModal({
   onSelect: (combatantId: string) => void;
   onCancel?: () => void;
 }): JSX.Element {
+  const modalRef = useModalFocus<HTMLElement>(() => {
+    if (!busy) onCancel?.();
+  }, Boolean(onCancel));
   return (
     <div className={`initiative-exchange-backdrop ${publicView ? 'public' : ''}`} role="presentation">
-      <section className="initiative-exchange-modal" role="dialog" aria-modal="true" aria-labelledby="initiative-exchange-title">
+      <section ref={modalRef} tabIndex={-1} className="initiative-exchange-modal" role="dialog" aria-modal="true" aria-labelledby="initiative-exchange-title">
         <header className="initiative-exchange-header">
           <span className="initiative-exchange-icon">
             <RefreshCw size={publicView ? 34 : 26} />

@@ -97,4 +97,33 @@ describe('SettingsModal turn timer settings', () => {
     expect(within(historyDialog).getByText('Добавлена пауза таймера')).toBeVisible();
     expect(api.getReleaseHistory).toHaveBeenCalledOnce();
   });
+
+  it('downloads an available update and starts the installer with one action', async () => {
+    vi.mocked(api.getUpdateStatus).mockResolvedValue({
+      status: 'available',
+      currentVersion: '0.3.0',
+      version: '0.3.1',
+      canInstall: true
+    });
+    vi.mocked(api.downloadUpdate).mockResolvedValue({
+      status: 'downloaded',
+      currentVersion: '0.3.0',
+      version: '0.3.1',
+      canInstall: true,
+      percent: 100
+    });
+    vi.mocked(api.installUpdate).mockResolvedValue({
+      status: 'installing',
+      currentVersion: '0.3.0',
+      version: '0.3.1',
+      canInstall: true
+    });
+
+    render(<SettingsModal onClose={() => undefined} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Скачать и установить' }));
+
+    await waitFor(() => expect(api.downloadUpdate).toHaveBeenCalledOnce());
+    await waitFor(() => expect(api.installUpdate).toHaveBeenCalledOnce());
+    expect(await screen.findByRole('button', { name: 'Запускаем установщик...' })).toBeDisabled();
+  });
 });

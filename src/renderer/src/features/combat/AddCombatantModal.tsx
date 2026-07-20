@@ -5,6 +5,7 @@ import type { AddCombatantGroupInput, AddCombatantsToCombatInput, CreatureTempla
 import { readNumber, readSignedNumber } from '../../shared/lib/numbers';
 import { InitiativeRollModeToggle } from '../../shared/ui/InitiativeRollModeToggle';
 import { CustomSelect, SearchableSelect, type SelectOption } from '../../shared/ui/Select';
+import { useModalFocus } from '../../shared/ui/useModalFocus';
 
 type QueuedGroup = { id: string; settings: AddCombatantGroupInput };
 
@@ -54,6 +55,9 @@ export function AddCombatantModal({
   const [initiativeBonus, setInitiativeBonus] = useState('0');
   const [hpMode, setHpMode] = useState<HitPointMode>('average');
   const [hpOverride, setHpOverride] = useState('');
+  const modalRef = useModalFocus<HTMLElement>(() => {
+    if (!busy) onClose();
+  });
   const templateById = useMemo(() => new Map(creatures.map((creature) => [creature.id, creature])), [creatures]);
   const selectedTemplate = templateById.get(templateId);
   const options = useMemo<SelectOption[]>(
@@ -123,7 +127,7 @@ export function AddCombatantModal({
 
   return createPortal(
     <div className="modal-backdrop" role="presentation">
-      <section className="app-modal add-combatant-modal" role="dialog" aria-modal="true" aria-labelledby="add-combatant-title">
+      <section ref={modalRef} tabIndex={-1} className="app-modal add-combatant-modal" role="dialog" aria-modal="true" aria-labelledby="add-combatant-title">
         <header className="modal-header">
           <div>
             <p className="eyebrow">Активный бой</p>

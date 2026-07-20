@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Save, X } from 'lucide-react';
 import type { Combatant, CombatantPatch } from '@shared/types';
 import { formatSignedInput, normalizeSignedInput, readNumber, readSignedNumber } from '../../shared/lib/numbers';
+import { useModalFocus } from '../../shared/ui/useModalFocus';
 
 /** Модалка поверх базовых значений применяет перезапись и затем отдельный бонус или штраф. */
 export function StatAdjustModal({
@@ -29,6 +30,9 @@ export function StatAdjustModal({
   const [override, setOverride] = useState('');
   const bonusInputRef = useRef<HTMLInputElement | null>(null);
   const overrideInputRef = useRef<HTMLInputElement | null>(null);
+  const modalRef = useModalFocus<HTMLElement>(() => {
+    if (!busy) onCancel();
+  });
   const overrideValue = override.trim() ? readNumber(override, baseValue) : null;
   const effectiveBaseValue = overrideValue ?? baseValue;
   const nextValue = Math.max(isArmorClass ? 0 : 1, effectiveBaseValue + readSignedNumber(bonus));
@@ -68,7 +72,7 @@ export function StatAdjustModal({
 
   return createPortal(
     <div className="modal-backdrop" role="presentation">
-      <section className="app-modal stat-adjust-modal" role="dialog" aria-modal="true" aria-labelledby="stat-adjust-title">
+      <section ref={modalRef} tabIndex={-1} className="app-modal stat-adjust-modal" role="dialog" aria-modal="true" aria-labelledby="stat-adjust-title">
         <header className="modal-header">
           <div>
             <p className="eyebrow">{combatant.name}</p>

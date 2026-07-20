@@ -79,7 +79,7 @@ export function TabButton({ active, onClick, icon, label }: { active: boolean; o
   return (
     <button className={`tab-button ${active ? 'active' : ''}`} type="button" onClick={onClick}>
       {icon}
-      {label}
+      <span>{label}</span>
     </button>
   );
 }

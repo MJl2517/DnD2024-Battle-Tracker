@@ -24,9 +24,43 @@ async function createCampaign(): Promise<void> {
   await expect(page.getByText('Ильмарен', { exact: true }).first()).toBeVisible();
 }
 
+async function setElectronWindowSize(title: string, width: number, height: number): Promise<void> {
+  await app.evaluate(
+    ({ BrowserWindow }, target) => {
+      const windows = BrowserWindow.getAllWindows();
+      const window =
+        (target.title === 'Экран игроков' ? windows.find((candidate) => candidate.webContents.getURL().includes('#/player')) : undefined) ??
+        windows.find((candidate) => candidate.getTitle() === target.title && !candidate.webContents.getURL().includes('#/player'));
+      if (!window) throw new Error(`Окно «${target.title}» не найдено.`);
+      window.setSize(target.width, target.height);
+    },
+    { title, width, height }
+  );
+}
+
+async function expectNoVisibleControlOverflow(targetPage: Page, rootSelector = 'body'): Promise<void> {
+  await expect
+    .poll(() =>
+      targetPage.locator(rootSelector).evaluate((root) => {
+        const controls = Array.from(root.querySelectorAll<HTMLElement>('.button, .icon-button, .tab-button, .hold-delete-button')).filter((control) => {
+          const style = getComputedStyle(control);
+          const box = control.getBoundingClientRect();
+          return style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && box.height > 0;
+        });
+        return controls.filter((control) => control.scrollWidth > control.clientWidth + 1 || control.scrollHeight > control.clientHeight + 1).length;
+      })
+    )
+    .toBe(0);
+}
+
 test('creates a campaign without touching the real user database', async () => {
   await createCampaign();
   await expect(page.getByRole('button', { name: 'Бой', exact: true })).toBeVisible();
+  await setElectronWindowSize('DnD 2024 Battle Tracker', 1180, 760);
+  await page.getByRole('button', { name: 'Настройки' }).click();
+  await expect(page.getByRole('dialog', { name: 'Настройки' })).toBeVisible();
+  await expectNoVisibleControlOverflow(page, '.settings-modal');
+  await page.getByRole('button', { name: 'Закрыть настройки' }).click();
 });
 
 test('runs an encounter, synchronizes the player window and awards xp', async ({ browserName }) => {
@@ -110,8 +144,17 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
 
   await page.reload();
   await expect(page.getByRole('button', { name: 'Экран игроков' })).toBeVisible();
+  await setElectronWindowSize('DnD 2024 Battle Tracker', 1180, 760);
+  await expect
+    .poll(() => page.locator('.tab-button').evaluateAll((buttons) => buttons.filter((button) => button.scrollWidth > button.clientWidth + 1).length))
+    .toBe(0);
+  for (const tab of ['Игроки', 'Бестиарий', 'Бой']) {
+    await page.getByRole('button', { name: tab, exact: true }).click();
+    await expectNoVisibleControlOverflow(page);
+  }
 
   await page.getByRole('button', { name: 'Энкаунтеры', exact: true }).click();
+  await expectNoVisibleControlOverflow(page);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1 && window.scrollY === 0)).toBe(true);
   const encounterPanel = page.locator('.encounter-layout > .panel').nth(1);
   const stickyHeader = encounterPanel.locator('.encounter-sticky-header');
@@ -162,10 +205,20 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
   await page.getByRole('button', { name: 'Экран игроков' }).click();
   const playerPage = await playerWindowPromise;
   await playerPage.waitForLoadState('domcontentloaded');
+  await setElectronWindowSize('Экран игроков', 1024, 720);
 
   await page.getByRole('button', { name: 'Бросить инициативу' }).click();
   const initiativeDialog = page.getByRole('dialog', { name: 'Порядок инициативы' });
   await expect(initiativeDialog).toBeVisible();
+  await expect
+    .poll(async () => {
+      const [actions, viewportHeight] = await Promise.all([
+        initiativeDialog.locator('.initiative-modal-actions').boundingBox(),
+        page.evaluate(() => window.innerHeight)
+      ]);
+      return actions ? actions.y + actions.height <= viewportHeight : false;
+    })
+    .toBe(true);
   await expect(playerPage.getByText('Бой ещё не начат')).toBeVisible();
 
   const heroRoll = initiativeDialog.getByRole('spinbutton', { name: 'Бросок инициативы: Тестовый герой' });
@@ -183,6 +236,34 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
   await expect(playerPage.getByText('Тестовый герой', { exact: true }).first()).toBeVisible();
   await expect(page.getByRole('timer', { name: /До конца хода/ })).toBeVisible();
   await expect(playerPage.getByRole('timer', { name: /До конца хода/ })).toBeVisible();
+  await expect
+    .poll(() =>
+      playerPage.evaluate(
+        () =>
+          document.documentElement.scrollWidth <= window.innerWidth + 1 &&
+          document.documentElement.scrollHeight <= window.innerHeight + 1 &&
+          document.body.scrollWidth <= window.innerWidth + 1 &&
+          document.body.scrollHeight <= window.innerHeight + 1
+      )
+    )
+    .toBe(true);
+  await expect
+    .poll(() =>
+      playerPage.locator('.player-card.current, .player-order-row.current').evaluateAll((elements) => {
+        const visible = elements.filter((element) => {
+          const box = element.getBoundingClientRect();
+          return box.right > 0 && box.left < window.innerWidth && box.bottom > 0 && box.top < window.innerHeight;
+        });
+        return (
+          visible.length === 2 &&
+          visible.every((element) => {
+            const box = element.getBoundingClientRect();
+            return box.left >= 0 && box.right <= window.innerWidth && box.top >= 0 && box.bottom <= window.innerHeight;
+          })
+        );
+      })
+    )
+    .toBe(true);
   await playerPage.waitForTimeout(1_500);
 
   await page.getByRole('button', { name: 'Поставить таймер хода на паузу' }).click();
@@ -199,6 +280,9 @@ test('runs an encounter, synchronizes the player window and awards xp', async ({
   await expect(addCombatantDialog.getByText('Бросок инициативы')).toBeVisible();
   await addCombatantDialog.getByRole('button', { name: 'Закрыть' }).click();
 
+  await setElectronWindowSize('DnD 2024 Battle Tracker', 1440, 920);
+  await setElectronWindowSize('Экран игроков', 1600, 900);
+  await page.waitForTimeout(200);
   await expect(page).toHaveScreenshot('master-combat.png', { animations: 'disabled', maxDiffPixels: 1_000 });
   await expect(playerPage).toHaveScreenshot('player-display.png', { animations: 'disabled', maxDiffPixels: 1_000 });
 

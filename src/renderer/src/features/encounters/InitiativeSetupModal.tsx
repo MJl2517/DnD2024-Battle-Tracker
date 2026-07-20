@@ -5,6 +5,7 @@ import type { CombatInitiativeEntry, CombatSession, Combatant, EncounterLair, In
 import { readNumber, signed } from '../../shared/lib/numbers';
 import { getUserFacingErrorMessage } from '../../shared/lib/errors';
 import { InitiativeExchangeModal } from '../combat/InitiativeExchangeModal';
+import { useModalFocus } from '../../shared/ui/useModalFocus';
 
 const api = window.dndTracker;
 
@@ -78,6 +79,9 @@ export function InitiativeSetupModal({
   const [orderedIds, setOrderedIds] = useState(() => sortIds(session, initial.rolls, initial.exchangedTotals));
   const [exchangeSourceId, setExchangeSourceId] = useState<string | null>(null);
   const [exchangeError, setExchangeError] = useState('');
+  const modalRef = useModalFocus<HTMLElement>(() => {
+    if (!busy) void onCancel();
+  });
 
   useEffect(() => {
     setDisplaySession(session);
@@ -193,7 +197,14 @@ export function InitiativeSetupModal({
 
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="app-modal initiative-setup-modal" role="dialog" aria-modal="true" aria-labelledby="initiative-setup-title">
+      <section
+        ref={modalRef}
+        tabIndex={-1}
+        className="app-modal initiative-setup-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="initiative-setup-title"
+      >
         <header className="modal-header">
           <div>
             <p className="eyebrow">Перед началом боя</p>

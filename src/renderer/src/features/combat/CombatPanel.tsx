@@ -328,16 +328,16 @@ export function CombatPanel({
             </div>
             <div className="combat-hotkeys" aria-label="Горячие клавиши боя">
               <Keyboard size={18} />
-              <span>
+              <span title="Стрелка влево: предыдущий ход">
                 <kbd>←</kbd> ход назад
               </span>
-              <span>
+              <span title="Стрелка вправо: следующий ход">
                 <kbd>→</kbd> следующий ход
               </span>
-              <span>
+              <span title="Shift и стрелка: предыдущий или следующий раунд">
                 <kbd>Shift</kbd> + <kbd>←</kbd>/<kbd>→</kbd> раунд назад/вперёд
               </span>
-              <span>
+              <span title="Enter: применить введённое изменение хитов">
                 <kbd>Enter</kbd> применить +/- хиты
               </span>
             </div>

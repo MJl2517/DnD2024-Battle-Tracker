@@ -42,7 +42,7 @@
 
 body {
   margin: 0;
-  min-width: 1024px;
+  min-width: 0;
   min-height: 100vh;
   background: linear-gradient(135deg, rgba(126, 42, 36, 0.2), transparent 34%), linear-gradient(315deg, rgba(44, 101, 88, 0.18), transparent 36%), #17130f;
 }

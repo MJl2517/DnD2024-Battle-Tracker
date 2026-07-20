@@ -3,11 +3,20 @@ import { ChevronRight, Dices, Plus, Shield, Skull, Users, X } from 'lucide-react
 import type { CombatXpAward } from '@shared/types';
 import { signed } from '../lib/numbers';
 import { Stat } from './Stat';
+import { useModalFocus } from './useModalFocus';
 
 export function XpAwardModal({ award, onClose, publicView = false }: { award: CombatXpAward; onClose?: () => void; publicView?: boolean }): JSX.Element {
+  const modalRef = useModalFocus<HTMLElement>(onClose, Boolean(onClose));
   return createPortal(
     <div className={`modal-backdrop ${publicView ? 'public' : ''}`} role="presentation">
-      <section className={`app-modal xp-award-modal ${publicView ? 'public' : ''}`} role="dialog" aria-modal="true" aria-labelledby="xp-award-title">
+      <section
+        ref={modalRef}
+        tabIndex={-1}
+        className={`app-modal xp-award-modal ${publicView ? 'public' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="xp-award-title"
+      >
         <header className="modal-header">
           <div>
             <p className="eyebrow">Награда за бой</p>

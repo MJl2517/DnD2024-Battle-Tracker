@@ -790,6 +790,62 @@ textarea::placeholder {
   border-radius: 8px;
   padding: 0 16px;
   font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  transition:
+    color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease,
+    transform var(--motion-fast) ease;
+}
+
+.button,
+.tab-button,
+.hold-delete-button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.button > svg,
+.icon-button > svg,
+.tab-button > svg,
+.hold-delete-button > svg {
+  flex: 0 0 auto;
+}
+
+.button:hover:not(:disabled),
+.icon-button:hover:not(:disabled),
+.tab-button:hover:not(:disabled),
+.hold-delete-button:hover:not(:disabled) {
+  border-color: rgba(248, 217, 154, 0.52);
+  box-shadow: 0 0 0 3px rgba(248, 217, 154, 0.08);
+}
+
+.button.primary:hover:not(:disabled) {
+  background-color: #ffe4ad;
+  border-color: #ffe4ad;
+}
+
+.button.danger:hover:not(:disabled),
+.hold-delete-button:hover:not(:disabled) {
+  background-color: rgba(148, 43, 40, 0.42);
+  border-color: rgba(232, 95, 76, 0.62);
+}
+
+.button:active:not(:disabled),
+.icon-button:active:not(:disabled),
+.tab-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.button:focus-visible,
+.icon-button:focus-visible,
+.tab-button:focus-visible,
+.hold-delete-button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .button.primary {
@@ -1068,13 +1124,81 @@ textarea::placeholder {
 }
 
 .tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(132px, 160px));
   gap: 10px;
   margin-bottom: 20px;
 }
 
 .tab-button {
-  min-width: 150px;
+  width: 100%;
+  min-width: 0;
+}
+
+.tab-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1280px) {
+  .tabs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: min(100%, 620px);
+  }
+
+  .tab-button {
+    gap: 7px;
+    padding: 0 10px;
+    font-size: 14px;
+  }
+
+  .combat-sticky-header {
+    gap: 10px;
+  }
+
+  .combat-toolbar {
+    grid-template-columns: minmax(280px, 0.8fr) minmax(340px, 1fr);
+    gap: 10px 14px;
+  }
+
+  .combat-toolbar .toolbar-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .combat-toolbar .toolbar-actions .button {
+    flex: 1 1 150px;
+    min-width: 0;
+    padding-inline: 10px;
+  }
+
+  .combat-active-bar {
+    flex-wrap: nowrap;
+    gap: 10px;
+  }
+
+  .combat-active-bar .combat-hotkeys {
+    flex: 0 1 auto;
+    gap: 5px;
+  }
+
+  .combat-active-bar .combat-hotkeys > svg {
+    display: none;
+  }
+
+  .combat-active-bar .combat-hotkeys span {
+    gap: 3px;
+    font-size: 0;
+  }
+
+  .combat-active-bar .combat-hotkeys kbd {
+    min-width: 24px;
+    min-height: 22px;
+    padding-inline: 5px;
+    font-size: 11px;
+  }
 }
 
 .panel-grid {

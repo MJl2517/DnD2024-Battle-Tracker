@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Clock3, History, Info, Play, Settings, UploadCloud, X } from 'lucide-react';
 import { DEFAULT_PUBLIC_DISPLAY_SETTINGS, type AppRelease, type AppUpdateStatus, type PublicDisplaySettings } from '@shared/types';
 import { ReleaseHistoryModal } from '../updates/ReleaseHistoryModal';
+import { useModalFocus } from '../../shared/ui/useModalFocus';
 
 const api = window.dndTracker;
 export function SettingsModal({
@@ -24,6 +25,7 @@ export function SettingsModal({
   const [releases, setReleases] = useState<AppRelease[]>([]);
   const [timerSecondsDraft, setTimerSecondsDraft] = useState(String(DEFAULT_PUBLIC_DISPLAY_SETTINGS.turnTimerSeconds));
   const timerSecondsInputRef = useRef<HTMLInputElement>(null);
+  const modalRef = useModalFocus<HTMLElement>(onClose);
 
   useEffect(() => {
     void api.getUpdateStatus().then(setUpdateStatus);
@@ -92,6 +94,28 @@ export function SettingsModal({
     }
   }
 
+  async function downloadAndInstallUpdate(): Promise<void> {
+    setUpdateBusy(true);
+    try {
+      const downloaded = await api.downloadUpdate();
+      setUpdateStatus(downloaded);
+      if (downloaded.status !== 'downloaded') {
+        if (downloaded.status === 'error') return;
+        throw new Error('Загрузка обновления не завершилась. Попробуйте ещё раз.');
+      }
+      const installing = await api.installUpdate();
+      setUpdateStatus(installing);
+    } catch (err) {
+      setUpdateStatus({
+        status: 'error',
+        currentVersion: updateStatus?.currentVersion ?? 'dev',
+        message: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      setUpdateBusy(false);
+    }
+  }
+
   async function loadReleaseHistory(): Promise<void> {
     setHistoryLoading(true);
     setHistoryError('');
@@ -114,7 +138,7 @@ export function SettingsModal({
 
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="app-modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <section ref={modalRef} tabIndex={-1} className="app-modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <header className="modal-header">
           <div>
             <p className="eyebrow">Приложение</p>
@@ -234,15 +258,21 @@ export function SettingsModal({
                 Проверить обновления
               </button>
               {updateStatus?.status === 'available' && updateStatus.canInstall !== false && (
-                <button className="button primary" type="button" disabled={updateBusy} onClick={() => void runUpdateAction(api.downloadUpdate)}>
+                <button className="button primary" type="button" disabled={updateBusy} onClick={() => void downloadAndInstallUpdate()}>
                   <UploadCloud size={18} />
-                  Скачать
+                  Скачать и установить
                 </button>
               )}
               {updateStatus?.status === 'downloaded' && (
                 <button className="button primary" type="button" disabled={updateBusy} onClick={() => void runUpdateAction(api.installUpdate)}>
                   <Play size={18} />
                   Установить и перезапустить
+                </button>
+              )}
+              {updateStatus?.status === 'installing' && (
+                <button className="button primary" type="button" disabled>
+                  <Play size={18} />
+                  Запускаем установщик...
                 </button>
               )}
             </div>
@@ -306,6 +336,10 @@ function describeUpdateStatus(status: AppUpdateStatus | null): { title: string; 
 
   if (status.status === 'downloaded') {
     return { title: `Версия${targetVersion} готова`, message: message || 'Нажмите «Установить и перезапустить».' };
+  }
+
+  if (status.status === 'installing') {
+    return { title: `Установка версии${targetVersion}`, message: message || 'Приложение закроется, после чего откроется мастер установки.' };
   }
 
   if (status.status === 'not-available') {

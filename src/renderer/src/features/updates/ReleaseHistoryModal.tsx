@@ -1,5 +1,6 @@
 import { History, RefreshCw, Sparkles, X } from 'lucide-react';
 import type { AppRelease } from '@shared/types';
+import { useModalFocus } from '../../shared/ui/useModalFocus';
 
 export function ReleaseHistoryModal({
   mode,
@@ -19,10 +20,13 @@ export function ReleaseHistoryModal({
   onClose: () => void;
 }): JSX.Element {
   const whatsNew = mode === 'whats-new';
+  const modalRef = useModalFocus<HTMLElement>(onClose);
 
   return (
     <div className="modal-backdrop release-history-backdrop" role="presentation">
       <section
+        ref={modalRef}
+        tabIndex={-1}
         className={`app-modal release-history-modal ${whatsNew ? 'whats-new' : ''}`}
         role="dialog"
         aria-modal="true"

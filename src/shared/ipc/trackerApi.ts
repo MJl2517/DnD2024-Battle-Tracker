@@ -79,7 +79,7 @@ export interface TrackerApi {
   getUpdateStatus: () => Promise<AppUpdateStatus>;
   checkForUpdates: () => Promise<AppUpdateStatus>;
   downloadUpdate: () => Promise<AppUpdateStatus>;
-  installUpdate: () => Promise<void>;
+  installUpdate: () => Promise<AppUpdateStatus>;
   getReleaseHistory: () => Promise<AppRelease[]>;
   onUpdateStatus: (callback: (status: AppUpdateStatus) => void) => () => void;
 }

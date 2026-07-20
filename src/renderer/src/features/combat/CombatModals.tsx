@@ -3,6 +3,7 @@ import { ChevronRight, Clock, Dices, Plus, Shield, Skull, Users, X } from 'lucid
 import type { Combatant, CompleteCombatOptions, CombatXpAward } from '@shared/types';
 import { normalizeSignedInput, signed } from '../../shared/lib/numbers';
 import { Stat } from '../../shared/ui/Stat';
+import { useModalFocus } from '../../shared/ui/useModalFocus';
 export function FinishCombatModal({
   busy,
   defeatedGiveXp,
@@ -40,6 +41,9 @@ export function FinishCombatModal({
   onCancel: () => void;
   onApply: () => void;
 }): JSX.Element {
+  const modalRef = useModalFocus<HTMLElement>(() => {
+    if (!busy) onCancel();
+  });
   const escapedOptions: Array<{ value: CompleteCombatOptions['escapedXpMode']; label: string }> = [
     { value: 'none', label: 'Сбежавшие не дают опыт' },
     { value: 'full', label: 'Сбежавшие дают опыт' },
@@ -48,7 +52,7 @@ export function FinishCombatModal({
 
   return createPortal(
     <div className="modal-backdrop" role="presentation">
-      <section className="app-modal xp-modal" role="dialog" aria-modal="true" aria-labelledby="finish-combat-title">
+      <section ref={modalRef} tabIndex={-1} className="app-modal xp-modal" role="dialog" aria-modal="true" aria-labelledby="finish-combat-title">
         <header className="modal-header">
           <div>
             <p className="eyebrow">Завершение боя</p>
@@ -163,10 +167,11 @@ export function AllyXpSelectionModal({
   onClose: () => void;
 }): JSX.Element {
   const selected = new Set(selectedIds);
+  const modalRef = useModalFocus<HTMLElement>(onClose);
 
   return createPortal(
     <div className="modal-backdrop ally-xp-backdrop" role="presentation">
-      <section className="app-modal ally-xp-modal" role="dialog" aria-modal="true" aria-labelledby="ally-xp-title">
+      <section ref={modalRef} tabIndex={-1} className="app-modal ally-xp-modal" role="dialog" aria-modal="true" aria-labelledby="ally-xp-title">
         <header className="modal-header">
           <div>
             <p className="eyebrow">Получатели опыта</p>
@@ -248,9 +253,12 @@ export function TimerEffectModal({
   onCancel: () => void;
   onApply: () => void;
 }): JSX.Element {
+  const modalRef = useModalFocus<HTMLElement>(() => {
+    if (!busy) onCancel();
+  });
   return createPortal(
     <div className="modal-backdrop" role="presentation">
-      <section className="app-modal timer-modal" role="dialog" aria-modal="true" aria-labelledby="timer-effect-title">
+      <section ref={modalRef} tabIndex={-1} className="app-modal timer-modal" role="dialog" aria-modal="true" aria-labelledby="timer-effect-title">
         <header className="modal-header">
           <div>
             <p className="eyebrow">Боевой таймер</p>

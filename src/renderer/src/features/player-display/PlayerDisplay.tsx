@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Dices, LogOut, Shield, Skull } from 'lucide-react';
 import { DEFAULT_PUBLIC_DISPLAY_SETTINGS, type PublicCombatant, type PublicCombatView, type PublicDisplaySettings } from '@shared/types';
 import { InlineEmpty } from '../../shared/ui/PanelTitle';
@@ -12,12 +12,8 @@ import { InitiativeExchangeModal } from '../combat/InitiativeExchangeModal';
 import { TurnTimer } from '../../shared/ui/TurnTimer';
 
 const api = window.dndTracker;
-const PLAYER_CARD_STEP = 730;
-const PLAYER_CARD_CENTER = 365;
 const PLAYER_SLIDER_REPEAT = 11;
 const PLAYER_SLIDER_MIDDLE_REPEAT = Math.floor(PLAYER_SLIDER_REPEAT / 2);
-const PLAYER_ORDER_ROW_STEP = 148;
-const PLAYER_ORDER_ROW_CENTER = 74;
 
 type PublicHpEvent = {
   id: string;
@@ -44,6 +40,10 @@ export function PlayerDisplay(): JSX.Element {
   const sliderCycleOffsetRef = useRef(PLAYER_SLIDER_MIDDLE_REPEAT);
   const previousHpSignalRef = useRef<Record<string, number>>({});
   const hpEventTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const sliderTrackRef = useRef<HTMLDivElement>(null);
+  const orderTrackRef = useRef<HTMLDivElement>(null);
+  const [sliderCenter, setSliderCenter] = useState(0);
+  const [orderCenter, setOrderCenter] = useState(0);
   const combatants = view.combatants;
   const publicSettings = view.settings ?? DEFAULT_PUBLIC_DISPLAY_SETTINGS;
   const currentCombatant = combatants.find((combatant) => combatant.isCurrent);
@@ -80,6 +80,42 @@ export function PlayerDisplay(): JSX.Element {
   const sliderTrack = buildPlayerSliderTrack(combatants);
   const sliderVirtualIndex = combatants.length ? sliderCycleOffsetRef.current * combatants.length + activeIndex : 0;
   const orderTrack = buildPlayerOrderTrack(combatants, activeIndex, view.round);
+
+  useLayoutEffect(() => {
+    const track = sliderTrackRef.current;
+    const activeCard = track?.children.item(sliderVirtualIndex);
+    if (!track || !(activeCard instanceof HTMLElement)) return undefined;
+    const trackElement = track;
+
+    const measure = (): void => setSliderCenter(activeCard.offsetLeft + activeCard.offsetWidth / 2);
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(activeCard);
+    if (trackElement.parentElement) observer?.observe(trackElement.parentElement);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [sliderTrack.length, sliderVirtualIndex]);
+
+  useLayoutEffect(() => {
+    const track = orderTrackRef.current;
+    const currentRow = track?.children.item(orderTrack.currentIndex);
+    if (!track || !(currentRow instanceof HTMLElement)) return undefined;
+    const trackElement = track;
+
+    const measure = (): void => setOrderCenter(currentRow.offsetTop + currentRow.offsetHeight / 2);
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(currentRow);
+    if (trackElement.parentElement) observer?.observe(trackElement.parentElement);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [orderTrack.currentIndex, orderTrack.items.length]);
 
   useEffect(() => {
     if (!campaignId) return undefined;
@@ -210,10 +246,7 @@ export function PlayerDisplay(): JSX.Element {
           )}
           <div className="player-slider-pane">
             <div className="player-slider-window">
-              <div
-                className="player-slider-track"
-                style={{ transform: `translateX(calc(50% - ${sliderVirtualIndex * PLAYER_CARD_STEP + PLAYER_CARD_CENTER}px))` }}
-              >
+              <div ref={sliderTrackRef} className="player-slider-track" style={{ transform: `translateX(calc(50% - ${sliderCenter}px))` }}>
                 {sliderTrack.map((item, index) => (
                   <PlayerInitiativeCard
                     combatant={item.combatant}
@@ -233,10 +266,7 @@ export function PlayerDisplay(): JSX.Element {
               <strong>Раунд {view.round}</strong>
             </div>
             <div className="player-order-window">
-              <div
-                className="player-order-track"
-                style={{ transform: `translateY(-${orderTrack.currentIndex * PLAYER_ORDER_ROW_STEP + PLAYER_ORDER_ROW_CENTER}px)` }}
-              >
+              <div ref={orderTrackRef} className="player-order-track" style={{ transform: `translateY(-${orderCenter}px)` }}>
                 {orderTrack.items.map((item, index) => (
                   <PlayerOrderRow
                     hpEvent={item.round === view.round ? hpEvents[item.combatant.id] : undefined}

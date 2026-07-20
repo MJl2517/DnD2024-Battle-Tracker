@@ -350,6 +350,7 @@
 
 .encounter-difficulty-panel.collapsed .difficulty-scale-wrap {
   padding-top: 0;
+  padding-right: 48px;
 }
 
 .encounter-difficulty-panel.collapsed .difficulty-scale {
@@ -615,12 +616,31 @@
 }
 
 @media (max-width: 1180px) {
-  .encounter-layout {
-    height: auto;
+  .encounters-workspace > .encounter-layout {
+    grid-template-columns: minmax(210px, 250px) minmax(0, 1fr);
   }
 
-  .encounter-layout > .panel {
-    overflow: visible;
+  .encounter-sticky-header {
+    margin-inline: -16px;
+    padding-inline: 16px;
+  }
+
+  .encounter-difficulty-panel {
+    padding: 12px;
+  }
+
+  .encounter-difficulty-panel:not(.collapsed) {
+    max-height: min(260px, calc(100vh - 460px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .encounter-difficulty-heading {
+    align-items: flex-start;
+  }
+
+  .difficulty-result-badge {
+    white-space: normal;
   }
 }
 

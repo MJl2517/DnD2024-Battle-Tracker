@@ -1,4 +1,4 @@
-import { type PointerEvent, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type PointerEvent, useEffect, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 
 const HOLD_DELETE_MS = 900;
@@ -30,17 +30,22 @@ export function HoldDeleteButton({
     setHolding(false);
   }
 
-  function startHold(event: PointerEvent<HTMLButtonElement>): void {
-    event.preventDefault();
-    event.stopPropagation();
+  function beginHold(): void {
     if (disabled) return;
+    if (timerRef.current) return;
 
     setHolding(true);
-    event.currentTarget.setPointerCapture(event.pointerId);
     timerRef.current = setTimeout(() => {
       clearHold();
       void onConfirm();
     }, HOLD_DELETE_MS);
+  }
+
+  function startHold(event: PointerEvent<HTMLButtonElement>): void {
+    event.preventDefault();
+    event.stopPropagation();
+    beginHold();
+    event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function stopHold(event: PointerEvent<HTMLButtonElement>): void {
@@ -50,6 +55,20 @@ export function HoldDeleteButton({
   }
 
   useEffect(() => clearHold, []);
+
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+    if ((event.key !== 'Enter' && event.key !== ' ') || event.repeat) return;
+    event.preventDefault();
+    event.stopPropagation();
+    beginHold();
+  }
+
+  function handleKeyUp(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    event.stopPropagation();
+    clearHold();
+  }
 
   return (
     <button
@@ -62,6 +81,9 @@ export function HoldDeleteButton({
       onPointerUp={stopHold}
       onPointerCancel={stopHold}
       onPointerLeave={stopHold}
+      onKeyDown={handleKeyDown}
+      onKeyUp={handleKeyUp}
+      onBlur={clearHold}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();

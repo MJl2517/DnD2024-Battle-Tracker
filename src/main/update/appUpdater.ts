@@ -24,7 +24,7 @@ export interface AppUpdater {
   getStatus(): AppUpdateStatus;
   check(): Promise<AppUpdateStatus>;
   download(): Promise<AppUpdateStatus>;
-  install(): void;
+  install(): Promise<AppUpdateStatus>;
   getReleaseHistory(): Promise<AppRelease[]>;
   bindEvents(): void;
 }
@@ -101,6 +101,40 @@ export function createAppUpdater(getMainWindow: () => BrowserWindow | null): App
     return status;
   }
 
+  async function install(): Promise<AppUpdateStatus> {
+    if (!app.isPackaged) {
+      return setStatus({
+        status: 'error',
+        canInstall: false,
+        message: 'Установка обновлений доступна только в установленной версии приложения.'
+      });
+    }
+    if (status.status !== 'downloaded') {
+      return setStatus({
+        status: 'error',
+        canInstall: true,
+        message: 'Пакет обновления ещё не готов. Сначала скачайте обновление полностью.'
+      });
+    }
+
+    const installingStatus = setStatus({
+      status: 'installing',
+      canInstall: true,
+      message: 'Закрываем приложение и запускаем установщик обновления...'
+    });
+
+    // Сначала отвечаем renderer по IPC, затем закрываем Electron. Иначе промис кнопки
+    // обрывается вместе с окном, а NSIS может запуститься только при следующем действии.
+    setTimeout(() => {
+      try {
+        autoUpdater.quitAndInstall(false, true);
+      } catch (error) {
+        setStatus({ status: 'error', canInstall: true, message: describeError(error) });
+      }
+    }, 250);
+    return installingStatus;
+  }
+
   /**
    * История сначала обновляется из GitHub, затем сохраняется рядом с данными
    * приложения. При временной потере сети пользователь увидит последний
@@ -168,8 +202,7 @@ export function createAppUpdater(getMainWindow: () => BrowserWindow | null): App
     getStatus: () => status,
     check,
     download,
-    // Явная установка запускает обычный NSIS wizard и после него снова открывает приложение.
-    install: () => autoUpdater.quitAndInstall(false, true),
+    install,
     getReleaseHistory,
     bindEvents
   };

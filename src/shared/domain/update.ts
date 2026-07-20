@@ -1,4 +1,4 @@
-export type UpdateStatusKind = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+export type UpdateStatusKind = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'installing' | 'error';
 
 export interface AppUpdateStatus {
   status: UpdateStatusKind;

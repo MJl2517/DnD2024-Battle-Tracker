@@ -116,7 +116,7 @@
   background: #f8d99a;
   border-radius: 8px;
   font-size: 28px;
-  font-weight: 950;
+  font-weight: 900;
 }
 
 .public-feature-body {
@@ -137,7 +137,7 @@
 .public-feature-body .feature-html a[href*='/spells/'],
 .public-feature-body .feature-html .dice-roll {
   color: #f8d99a;
-  font-weight: 950;
+  font-weight: 900;
 }
 
 .public-feature-card .spell-popover {
@@ -202,7 +202,7 @@
   border-radius: 8px;
   box-shadow: 0 18px 52px rgba(0, 0, 0, 0.36);
   font-size: 20px;
-  font-weight: 1000;
+  font-weight: 900;
   transform: translateX(-50%);
   animation: initiative-intro-banner 2100ms ease both;
 }
@@ -360,7 +360,7 @@
   border-radius: 999px;
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
   font-size: 42px;
-  font-weight: 1000;
+  font-weight: 900;
   line-height: 1;
   pointer-events: none;
   text-shadow: 0 3px 8px rgba(0, 0, 0, 0.46);
@@ -514,7 +514,7 @@
   left: 22px;
   right: 22px;
   display: grid;
-  gap: 18px;
+  gap: 24px;
   transition: transform 520ms ease;
   will-change: transform;
 }
@@ -942,26 +942,33 @@
 
 .player-order-row.round-start::before {
   position: absolute;
-  top: -28px;
-  left: 54px;
-  width: 4px;
-  height: 28px;
+  top: -34px;
+  left: 50%;
+  width: 2px;
+  height: 34px;
   content: '';
   background: rgba(248, 217, 154, 0.62);
+  transform: translateX(-50%);
+}
+
+.player-order-row.round-start {
+  margin-top: 34px;
 }
 
 .player-round-marker {
   position: absolute;
-  top: -56px;
-  left: 72px;
+  top: -30px;
+  left: 50%;
   z-index: 2;
-  padding: 8px 16px;
+  padding: 5px 13px;
   color: #18110b;
   background: #f8d99a;
   border-radius: 999px;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 900;
+  white-space: nowrap;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+  transform: translateX(-50%);
 }
 
 @media (max-width: 1180px) {
@@ -974,8 +981,7 @@
   }
 
   .two-columns,
-  .library-layout,
-  .encounter-layout {
+  .library-layout {
     grid-template-columns: 1fr;
   }
 
@@ -987,14 +993,6 @@
   .stat-editor {
     height: auto;
     max-height: none;
-  }
-
-  .player-board {
-    grid-template-columns: 1fr;
-  }
-
-  .player-card {
-    flex-basis: 380px;
   }
 
   .combat-toolbar {
@@ -1036,11 +1034,195 @@
   }
 
   .player-screen .player-board {
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: minmax(0, 1.55fr) minmax(310px, 0.8fr);
+    gap: 20px;
   }
 
   .player-screen .player-card {
-    flex-basis: 680px;
+    grid-template-columns: 150px minmax(0, 1fr);
+    flex-basis: min(560px, calc(100vw - 430px));
+    gap: 20px;
+    min-height: 320px;
+    padding: 24px;
+  }
+
+  .player-screen {
+    gap: 20px;
+    padding: 24px;
+  }
+
+  .player-header {
+    gap: 18px;
+  }
+
+  .player-header .eyebrow {
+    font-size: 16px;
+  }
+
+  .player-header h1 {
+    font-size: 46px;
+  }
+
+  .player-header .player-header-dice {
+    width: 48px;
+    height: 48px;
+  }
+
+  .player-header-status {
+    gap: 16px;
+  }
+
+  .player-header .turn-timer.public {
+    width: 100px;
+    height: 100px;
+  }
+
+  .player-slider-window {
+    padding-block: 28px;
+  }
+
+  .player-slider-track {
+    gap: 24px;
+  }
+
+  .player-visual {
+    width: 150px;
+    min-height: 150px;
+  }
+
+  .player-token {
+    width: 150px;
+    height: 150px;
+  }
+
+  .player-init {
+    width: 136px;
+    height: 136px;
+    font-size: 58px;
+  }
+
+  .player-token-init {
+    min-width: 54px;
+    height: 54px;
+    padding-inline: 10px;
+    font-size: 26px;
+  }
+
+  .player-info {
+    min-width: 0;
+  }
+
+  .player-info h2 {
+    display: -webkit-box;
+    overflow: hidden;
+    margin-bottom: 10px;
+    font-size: 40px;
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .player-info p {
+    margin-bottom: 12px;
+    font-size: 20px;
+  }
+
+  .player-card .chip {
+    min-height: 38px;
+    padding-inline: 11px;
+    font-size: 16px;
+  }
+
+  .player-order-header {
+    padding: 14px 16px;
+    font-size: 18px;
+  }
+
+  .player-order-header strong {
+    padding: 6px 9px;
+  }
+
+  .player-order-window {
+    padding: 14px;
+  }
+
+  .player-order-track {
+    left: 14px;
+    right: 14px;
+    gap: 18px;
+  }
+
+  .player-order-row {
+    grid-template-columns: 40px 46px minmax(0, 1fr) auto;
+    gap: 8px;
+    min-height: 96px;
+    padding: 10px;
+  }
+
+  .player-order-row h3 {
+    overflow: hidden;
+    font-size: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .player-order-row p {
+    overflow: hidden;
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .player-order-turn {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+  }
+
+  .player-order-token {
+    width: 46px;
+    height: 46px;
+  }
+
+  .player-order-badge {
+    min-height: 26px;
+    padding-inline: 7px;
+    font-size: 12px;
+  }
+
+  .player-order-effects {
+    gap: 3px;
+    max-height: 28px;
+    margin-top: 4px;
+    overflow: hidden;
+  }
+
+  .player-order-effects .chip {
+    min-height: 24px;
+    padding-inline: 6px;
+    font-size: 11px;
+  }
+
+  .player-order-effects .status-icon {
+    width: 16px;
+    height: 16px;
+    flex-basis: 16px;
+  }
+
+  .player-order-row.round-start {
+    margin-top: 28px;
+  }
+
+  .player-order-row.round-start::before {
+    top: -28px;
+    height: 28px;
+  }
+
+  .player-round-marker {
+    top: -25px;
+    padding: 4px 10px;
+    font-size: 15px;
   }
 }
 
