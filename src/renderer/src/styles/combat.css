@@ -1350,14 +1350,17 @@
 
 .update-actions {
   display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  width: min(260px, 100%);
+  min-width: 0;
+  flex: 0 1 260px;
+  flex-direction: column;
+  align-items: stretch;
   gap: 10px;
 }
 
 .update-actions .button {
-  min-width: 220px;
+  width: 100%;
+  min-width: 0;
 }
 
 @media (max-height: 760px) {
